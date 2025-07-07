@@ -798,7 +798,7 @@ refresh_instance_outputs() {
             debug_message "Outputs refreshed successfully for $instance"
             
             # Use existing centralized copy function from output.sh
-            copy_module_outputs_to_centralized "$instance" "$env"
+            move_module_outputs_to_centralized "$instance" "$env"
             
             cd "$original_dir"
             return 0

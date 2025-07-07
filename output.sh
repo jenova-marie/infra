@@ -63,23 +63,23 @@ generate_module_outputs() {
         if file_exists_and_has_content "$output_file"; then
             debug_message "Outputs generated successfully for module: $module"
             
-            # Copy to centralized location (using KISS variable)
-            copy_module_outputs_to_centralized "$module" "$OP_ENV"
+            # Move to centralized location (using KISS variable)
+            move_module_outputs_to_centralized "$module" "$OP_ENV"
         else
             debug_message "No outputs available for module: $module (creating empty JSON for automation)"
             # Create empty JSON object for automation consistency instead of deleting
             echo "{}" > "$output_file"
             
-            # Copy to centralized location (empty JSON is still valid)
-            copy_module_outputs_to_centralized "$module" "$OP_ENV"
+            # Move to centralized location (empty JSON is still valid)
+            move_module_outputs_to_centralized "$module" "$OP_ENV"
         fi
     else
         debug_message "Terragrunt output command failed for module: $module (creating empty JSON for automation)"
         # Create empty JSON object even on failure for automation consistency
         echo "{}" > "$output_file"
         
-        # Copy to centralized location (empty JSON indicates no resources)
-        copy_module_outputs_to_centralized "$module" "$OP_ENV"
+        # Move to centralized location (empty JSON indicates no resources)
+        move_module_outputs_to_centralized "$module" "$OP_ENV"
         success=false
     fi
     
@@ -143,16 +143,16 @@ generate_module_outputs_bg() {
         if file_exists_and_has_content "$output_file"; then
             debug_message "Outputs generated successfully for module (background): $module"
             
-            # Copy to centralized location (using KISS variable)
-            copy_module_outputs_to_centralized "$module" "$OP_ENV"
+            # Move to centralized location (using KISS variable)
+            move_module_outputs_to_centralized "$module" "$OP_ENV"
             echo "SUCCESS" > "$absolute_result_file"
         else
             debug_message "No outputs available for module (background): $module (creating empty JSON for automation)"
             # Create empty JSON object for automation consistency instead of deleting
             echo "{}" > "$output_file"
             
-            # Copy to centralized location (empty JSON is still valid)
-            copy_module_outputs_to_centralized "$module" "$OP_ENV"
+            # Move to centralized location (empty JSON is still valid)
+            move_module_outputs_to_centralized "$module" "$OP_ENV"
             echo "SUCCESS" > "$absolute_result_file"
         fi
     else
@@ -160,8 +160,8 @@ generate_module_outputs_bg() {
         # Create empty JSON object even on failure for automation consistency
         echo "{}" > "$output_file"
         
-        # Copy to centralized location (empty JSON indicates no resources)
-        copy_module_outputs_to_centralized "$module" "$OP_ENV"
+        # Move to centralized location (empty JSON indicates no resources)
+        move_module_outputs_to_centralized "$module" "$OP_ENV"
         echo "SUCCESS" > "$absolute_result_file"
         success=false
     fi
@@ -172,13 +172,13 @@ generate_module_outputs_bg() {
     return $([ "$success" = true ] && echo 0 || echo 1)
 }
 
-# Copy module outputs to centralized location
-# Usage: copy_module_outputs_to_centralized "athena" "dev"
-copy_module_outputs_to_centralized() {
+# Move module outputs to centralized location (eliminates duplication)
+# Usage: move_module_outputs_to_centralized "athena" "dev"
+move_module_outputs_to_centralized() {
     local module="$1"
     local env="$2"
     
-    debug_message "Copying outputs to centralized location for module: $module"
+    debug_message "Moving outputs to centralized location for module: $module"
     
     # Use KISS utility functions for standardized paths
     local module_output_file="$(get_module_path "$env" "$module")/output.json"
@@ -187,14 +187,14 @@ copy_module_outputs_to_centralized() {
     # Ensure centralized outputs directory exists using KISS function
     ensure_output_directory "$env"
     
-    # Copy outputs if they exist
+    # Move outputs if they exist (eliminates duplication)
     if file_exists_and_readable "$module_output_file"; then
-        execute_with_dry_run "cp '$module_output_file' '$centralized_file'" "Would copy outputs: $module_output_file -> $centralized_file"
+        execute_with_dry_run "mv '$module_output_file' '$centralized_file'" "Would move outputs: $module_output_file -> $centralized_file"
         if ! is_dry_run; then
-            debug_message "Copied outputs: $module_output_file -> $centralized_file"
+            debug_message "Moved outputs: $module_output_file -> $centralized_file"
         fi
     else
-        debug_message "No outputs file to copy for module: $module"
+        debug_message "No outputs file to move for module: $module"
     fi
 }
 
@@ -336,16 +336,16 @@ cleanup_destroyed_module_outputs() {
         local centralized_file="$(get_module_output_path "$OP_ENV" "$module")"
         local files_removed=0
         
-        # Remove local output.json file
-        if [[ -f "$module_output_file" ]]; then
-            execute_with_dry_run "rm -f '$module_output_file'" "Would remove output file: $module_output_file"
+        # Remove any file or symlink in module directory (if it exists)
+        if [[ -f "$module_output_file" || -L "$module_output_file" ]]; then
+            execute_with_dry_run "rm -f '$module_output_file'" "Would remove output file/symlink: $module_output_file"
             if ! is_dry_run; then
-                debug_message "Removed local output file: $module_output_file"
+                debug_message "Removed output file/symlink: $module_output_file"
             fi
             ((files_removed++))
         fi
         
-        # Remove centralized output file
+        # Remove centralized output file (the actual file)
         if [[ -f "$centralized_file" ]]; then
             execute_with_dry_run "rm -f '$centralized_file'" "Would remove centralized output: $centralized_file"
             if ! is_dry_run; then
@@ -406,19 +406,20 @@ validate_output_files() {
             local module_output_file="$(get_module_path "$OP_ENV" "$module")/output.json"
             local centralized_file="$(get_module_output_path "$OP_ENV" "$module")"
             
-            # Ensure both local and centralized output files exist (create empty JSON if missing)
-            if [[ ! -f "$module_output_file" ]]; then
-                execute_with_dry_run "ensure_directory '$(dirname "$module_output_file")' && echo '{}' > '$module_output_file'" "Would create missing output file: $module_output_file"
-                if ! is_dry_run; then
-                    debug_message "Created missing local output file: $module_output_file"
-                fi
-                ((validation_count++))
-            fi
-            
+            # Ensure centralized output file exists (create empty JSON if missing)
             if [[ ! -f "$centralized_file" ]]; then
                 execute_with_dry_run "ensure_directory '$(dirname "$centralized_file")' && echo '{}' > '$centralized_file'" "Would create missing centralized output: $centralized_file"
                 if ! is_dry_run; then
                     debug_message "Created missing centralized output file: $centralized_file"
+                fi
+                ((validation_count++))
+            fi
+            
+            # Remove any existing file or symlink in module directory to prevent conflicts
+            if [[ -f "$module_output_file" || -L "$module_output_file" ]]; then
+                execute_with_dry_run "rm -f '$module_output_file'" "Would remove existing output file/symlink: $module_output_file"
+                if ! is_dry_run; then
+                    debug_message "Removed existing output file/symlink: $module_output_file"
                 fi
                 ((validation_count++))
             fi

@@ -23,21 +23,19 @@ execute_clean_operation() {
     
     local env_path="$(get_environment_path "$OP_ENV")"
     
-    # KISS: Clean global environment files based on target
-    if [[ "$OP_TARGET_TYPE" == "all" ]]; then
-        info_message "🧹 Cleaning all environment files for: $OP_ENV"
-        
-        # Remove global environment folders
-        if is_dry_run; then
-            dry_run_message "[DRY-RUN] Would remove: $env_path/log/"
-            dry_run_message "[DRY-RUN] Would remove: $env_path/outputs/"
-            dry_run_message "[DRY-RUN] Would remove: $env_path/.terraform*"
-        else
-            rm -rf "$env_path/log" 2>/dev/null || true
-            rm -rf "$env_path/outputs" 2>/dev/null || true
-            rm -rf "$env_path"/.terraform* 2>/dev/null || true
-            info_message "✅ Cleaned global environment files"
-        fi
+    # KISS: Always clean global environment files (outputs/, logs/, .terraform*)
+    info_message "🧹 Cleaning global environment files for: $OP_ENV"
+    
+    # Remove global environment folders
+    if is_dry_run; then
+        dry_run_message "[DRY-RUN] Would remove: $env_path/log/"
+        dry_run_message "[DRY-RUN] Would remove: $env_path/outputs/"
+        dry_run_message "[DRY-RUN] Would remove: $env_path/.terraform*"
+    else
+        rm -rf "$env_path/log" 2>/dev/null || true
+        rm -rf "$env_path/outputs" 2>/dev/null || true
+        rm -rf "$env_path"/.terraform* 2>/dev/null || true
+        info_message "✅ Cleaned global environment files"
     fi
     
     # Get target modules for module-specific cleaning
@@ -111,7 +109,7 @@ clean_module_files() {
             fi
         fi
         
-        # Remove output.json files
+        # Remove output.json files (handle both symlinks and actual files)
         if [[ -f "output.json" ]]; then
             if rm -f output.json 2>/dev/null; then
                 removed_items+=("output.json")
