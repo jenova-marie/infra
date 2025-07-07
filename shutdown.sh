@@ -3,9 +3,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Infrastructure Management System v2.0 - Shutdown Module
 # ═══════════════════════════════════════════════════════════════════════════
-# Purpose: Unified shutdown operations - AWS CLI-based and infrastructure recreation
+# Purpose: Infrastructure recreation operations - destroy → apply → output
 # Author: Infrastructure Management System v2.0
-# Last Updated: December 30, 2024
+# Last Updated: January 3, 2025
 
 set -euo pipefail
 
@@ -21,9 +21,9 @@ execute_shutdown_operation() {
     
     debug_message "Executing shutdown operation for target: $OP_TARGET_TYPE"
     
-    # Check if bounce flag is enabled - if so, do destroy->apply->output sequence
+    # Check if bounce flag is enabled - if so, do destroy→apply→output sequence
     if is_bounce; then
-        debug_message "Bounce flag enabled - executing AWS CLI terminate→destroy→apply→output sequence"
+        debug_message "Bounce flag enabled - executing infrastructure recreation sequence"
         
         # Determine target instances for bounce operation
         local instances=()
@@ -40,77 +40,57 @@ execute_shutdown_operation() {
         return $?
     fi
     
-    # Check if terminate mode is enabled - AWS CLI terminate only
-    if is_terminate; then
-        debug_message "Terminate mode enabled - AWS CLI terminate"
+    # Check if reboot flag is enabled - infrastructure recreation for restart
+    if is_reboot; then
+        debug_message "Reboot flag enabled - executing infrastructure recreation for restart"
         
-        # For terminate mode, validate we have instance targets
-        if [[ "$OP_TARGET_TYPE" == "infrastructure" ]]; then
-            handle_error "Terminate mode operations only apply to instances, not infrastructure modules"
-        fi
-        
-        # Determine target instances
+        # Determine target instances for reboot operation
         local instances=()
         while IFS= read -r instance; do
             [[ -n "$instance" ]] && instances+=("$instance")
         done < <(get_modules_for_target "$OP_TARGET_TYPE")
         
         if [[ ${#instances[@]} -eq 0 ]]; then
-            handle_error "No instances found for target: $OP_TARGET_TYPE"
+            handle_error "No instances found for reboot target: $OP_TARGET_TYPE"
         fi
         
-        info_message "🔴 Starting terminate sequence for ${#instances[@]} instance(s)"
+        info_message "🔄 Starting infrastructure recreation for restart of ${#instances[@]} instance(s)"
         
-        # Execute terminate operation
-        execute_terminate_operation "$OP_ENV" "${instances[@]}"
+        # Execute bounce operation (same as bounce flag)
+        execute_bounce_operation "$OP_ENV" "$OP_TARGET_TYPE" "${instances[@]}"
         
         # Finalize shutdown operation
-        finalize_shutdown_operation "Terminate operation completed"
+        finalize_shutdown_operation "Infrastructure recreation restart completed"
         return $?
     fi
     
-    # Check if hard mode is enabled - use AWS CLI only
-    if is_hard; then
-        debug_message "Hard mode enabled - using AWS CLI only"
+    # Check if flush flag is enabled - infrastructure recreation for cleanup
+    if is_flush; then
+        debug_message "Flush flag enabled - executing infrastructure recreation for cleanup"
         
-        # For hard mode, validate we have instance targets
-        if [[ "$OP_TARGET_TYPE" == "infrastructure" ]]; then
-            handle_error "Hard mode operations only apply to instances, not infrastructure modules"
-        fi
-        
-        # Determine target instances
+        # Determine target instances for flush operation
         local instances=()
         while IFS= read -r instance; do
             [[ -n "$instance" ]] && instances+=("$instance")
         done < <(get_modules_for_target "$OP_TARGET_TYPE")
         
         if [[ ${#instances[@]} -eq 0 ]]; then
-            handle_error "No instances found for target: $OP_TARGET_TYPE"
+            handle_error "No instances found for flush target: $OP_TARGET_TYPE"
         fi
         
-        info_message "🔧 Starting hard mode AWS CLI operation for ${#instances[@]} instance(s)"
+        info_message "🧹 Starting infrastructure recreation for cleanup of ${#instances[@]} instance(s)"
         
-        if is_reboot; then
-            info_message "🔄 Hard reboot mode - using AWS CLI to reboot instances"
-            execute_hard_reboot_operations "$OP_ENV" "${instances[@]}"
-        else
-            info_message "🛑 Hard shutdown mode - using AWS CLI to terminate instances"
-            execute_hard_shutdown_operations "$OP_ENV" "${instances[@]}"
-        fi
+        # Execute bounce operation (same as bounce flag)
+        execute_bounce_operation "$OP_ENV" "$OP_TARGET_TYPE" "${instances[@]}"
         
         # Finalize shutdown operation
-        finalize_shutdown_operation "Hard mode AWS CLI operation completed"
+        finalize_shutdown_operation "Infrastructure recreation cleanup completed"
         return $?
     fi
     
-    # Default mode: AWS CLI terminate operations
-    debug_message "Executing AWS CLI shutdown operation"
-    log_phase "AWS CLI shutdown operation"
-    
-    # For AWS CLI operations, validate we have instance targets
-    if [[ "$OP_TARGET_TYPE" == "infrastructure" ]]; then
-        handle_error "AWS CLI operations only apply to instances, not infrastructure modules"
-    fi
+    # Default mode: Infrastructure recreation (destroy → apply → output)
+    debug_message "Executing infrastructure recreation operation"
+    log_phase "Infrastructure recreation operation"
     
     # Determine target instances
     local instances=()
@@ -122,54 +102,38 @@ execute_shutdown_operation() {
         handle_error "No instances found for target: $OP_TARGET_TYPE"
     fi
     
-    info_message "🔄 Starting AWS CLI operation for ${#instances[@]} instance(s)"
+    info_message "🔄 Starting infrastructure recreation for ${#instances[@]} instance(s)"
     
-    # Execute AWS CLI operations for all target instances
-    if is_reboot; then
-        info_message "🔄 Reboot mode - using AWS CLI to reboot instances"
-        execute_hard_reboot_operations "$OP_ENV" "${instances[@]}"
-    else
-        info_message "🛑 Shutdown mode - using AWS CLI to terminate instances"
-        execute_hard_shutdown_operations "$OP_ENV" "${instances[@]}"
-    fi
+    # Execute infrastructure recreation (same as bounce operation)
+    execute_bounce_operation "$OP_ENV" "$OP_TARGET_TYPE" "${instances[@]}"
     
     # Finalize shutdown operation
-    finalize_shutdown_operation "AWS CLI shutdown operation completed"
+    finalize_shutdown_operation "Infrastructure recreation operation completed"
 }
 
-# Execute bounce sequence (AWS CLI terminate -> wait -> destroy -> apply -> output)
+# Execute bounce sequence (destroy → apply → output)
 # Usage: execute_bounce_sequence "instances"
 execute_bounce_sequence() {
     local target_type="$1"
     
     debug_message "Executing bounce sequence for target: $target_type"
-    log_phase "Bounce sequence: AWS CLI terminate -> wait -> destroy -> apply -> output"
+    log_phase "Bounce sequence: destroy → apply → output"
     
-    info_message "🔄 Starting bounce sequence: AWS CLI terminate -> wait -> destroy -> apply -> output"
+    info_message "🔄 Starting bounce sequence: destroy → apply → output"
     
-    # Step 1: AWS CLI terminate instances
-    info_message "🛑 Step 1/4: AWS CLI termination of instances..."
-    log_phase "Bounce: AWS CLI termination"
-    
-    local env=$(get_environment)
-    if aws_terminate_instances_for_bounce "$env" "$target_type"; then
-        success_message "✅ AWS CLI termination phase completed - instances terminating"
-    else
-        warn_message "⚠️  AWS CLI termination had issues, but continuing with bounce sequence..."
-    fi
-    
-    # Step 2: Execute destroy using standard operation logic
-    info_message "🗑️  Step 2/4: Destroying target infrastructure..."
+    # Step 1: Execute destroy using standard operation logic
+    info_message "🗑️  Step 1/3: Destroying target infrastructure..."
     log_phase "Bounce: Executing destroy"
     
+    local env=$(get_environment)
     if execute_standard_operation_with_params "destroy" "$env" "$target_type"; then
         success_message "✅ Destroy phase completed"
     else
         handle_error "❌ Destroy phase failed during bounce sequence"
     fi
     
-    # Step 3: Execute apply using standard operation logic (includes --no-volumes handling)
-    info_message "🚀 Step 3/4: Applying target infrastructure..."
+    # Step 2: Execute apply using standard operation logic (includes --no-volumes handling)
+    info_message "🚀 Step 2/3: Applying target infrastructure..."
     log_phase "Bounce: Executing apply"
     
     if execute_standard_operation_with_params "apply" "$env" "$target_type"; then
@@ -178,12 +142,12 @@ execute_bounce_sequence() {
         handle_error "❌ Apply phase failed during bounce sequence"
     fi
     
-    # Step 4: Output generation is already handled by the apply step
-    info_message "📤 Step 4/4: Output generation (already completed by apply step)"
+    # Step 3: Output generation is already handled by the apply step
+    info_message "📤 Step 3/3: Output generation (already completed by apply step)"
     log_phase "Bounce: Output generation (automatic)"
     
     success_message "✅ Output generation completed (handled automatically by apply step)"
-    success_message "🎉 Bounce sequence completed successfully: AWS CLI terminate -> destroy -> apply -> output"
+    success_message "🎉 Bounce sequence completed successfully: destroy → apply → output"
     
     # Ring completion bell if enabled
     ring_completion_bell "Bounce sequence completed successfully"
@@ -195,290 +159,7 @@ execute_bounce_sequence() {
     cleanup_known_hosts "Bounce sequence completed successfully"
 }
 
-# AWS CLI terminate instances for bounce operations
-# Usage: aws_terminate_instances_for_bounce "dev" "instances"
-aws_terminate_instances_for_bounce() {
-    local env="$1"
-    local target_type="$2"
-    
-    debug_message "AWS CLI terminate instances for bounce, target: $target_type"
-    
-    # Determine target instances
-    local instances=()
-    case "$target_type" in
-        "all"|"instances")
-            # Get all instance modules
-            instances=($(get_modules_for_target "instances"))
-            ;;
-        "infrastructure")
-            # Infrastructure target doesn't include instances, return success
-            debug_message "Infrastructure target doesn't include instances - no termination needed"
-            return 0
-            ;;
-        *)
-            # Single instance module
-            if is_valid_module "$target_type"; then
-                instances=("$target_type")
-            else
-                warn_message "Target '$target_type' is not a valid instance module"
-                return 1
-            fi
-            ;;
-    esac
-    
-    if [[ $(safe_array_length "instances") -eq 0 ]]; then
-        debug_message "No instances found for AWS CLI termination"
-        return 0
-    fi
-    
-    info_message "🔄 AWS CLI termination for $(safe_array_length "instances") instance(s)..."
-    
-    # Handle dry-run mode
-    if is_dry_run; then
-        dry_run_message "[DRY-RUN] Would terminate instances via AWS CLI: $(safe_array_string "instances")"
-        dry_run_message "[DRY-RUN] Would wait for instances to reach terminated state"
-        info_message "ℹ️  [DRY-RUN] AWS CLI termination phase would complete successfully"
-        return 0
-    fi
-    
-    # Execute AWS CLI termination for all target instances
-    if [[ $(safe_array_length "instances") -eq 1 ]]; then
-        # Single instance - execute directly
-        if execute_hard_shutdown_single_instance "$env" "${instances[0]}"; then
-            success_message "✅ AWS CLI termination completed for ${instances[0]}"
-        else
-            warn_message "❌ AWS CLI termination failed for ${instances[0]}, continuing..."
-        fi
-    else
-        # Multiple instances - execute in parallel
-        if execute_hard_shutdown_operations "$env" $(safe_array_elements "instances"); then
-            success_message "✅ AWS CLI termination completed for $(safe_array_length "instances") instances"
-        else
-            warn_message "❌ AWS CLI termination failed for some instances, continuing..."
-        fi
-    fi
-    
-    return 0  # Always continue with bounce even if termination has issues
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# AWS CLI Operation Functions (using existing aws.sh functions)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Execute hard shutdown operations for multiple instances
-# Usage: execute_hard_shutdown_operations "dev" "athena" "metis"
-execute_hard_shutdown_operations() {
-    local env="$1"
-    shift
-    local instances=("$@")
-    
-    debug_message "Executing hard shutdown operations for ${#instances[@]} instance(s): ${instances[*]}"
-    
-    # Handle dry-run mode
-    if is_dry_run; then
-        dry_run_message "[DRY-RUN] Would terminate instances via AWS CLI: ${instances[*]}"
-        for instance in "${instances[@]}"; do
-            dry_run_message "[DRY-RUN] Would execute: aws ec2 terminate-instances --instance-ids {$instance-id}"
-        done
-        info_message "ℹ️  [DRY-RUN] Hard shutdown operations would complete successfully"
-        return 0
-    fi
-    
-    # Execute termination for each instance
-    local success_count=0
-    local total_count=${#instances[@]}
-    
-    for instance in "${instances[@]}"; do
-        if execute_hard_shutdown_single_instance "$env" "$instance"; then
-            ((success_count++))
-        else
-            warn_message "⚠️  Failed to terminate instance: $instance"
-        fi
-    done
-    
-    if [[ $success_count -eq $total_count ]]; then
-        success_message "✅ Hard shutdown operations completed successfully for all $total_count instance(s)"
-        return 0
-    else
-        warn_message "⚠️  Hard shutdown operations completed with $((total_count - success_count)) failure(s) out of $total_count"
-        return 1
-    fi
-}
-
-# Execute hard reboot operations for multiple instances
-# Usage: execute_hard_reboot_operations "dev" "athena" "metis"
-execute_hard_reboot_operations() {
-    local env="$1"
-    shift
-    local instances=("$@")
-    
-    debug_message "Executing hard reboot operations for ${#instances[@]} instance(s): ${instances[*]}"
-    
-    # Handle dry-run mode
-    if is_dry_run; then
-        dry_run_message "[DRY-RUN] Would reboot instances via AWS CLI: ${instances[*]}"
-        for instance in "${instances[@]}"; do
-            dry_run_message "[DRY-RUN] Would execute: aws ec2 reboot-instances --instance-ids {$instance-id}"
-        done
-        info_message "ℹ️  [DRY-RUN] Hard reboot operations would complete successfully"
-        return 0
-    fi
-    
-    # Execute reboot for each instance
-    local success_count=0
-    local total_count=${#instances[@]}
-    
-    for instance in "${instances[@]}"; do
-        if execute_hard_reboot_single_instance "$env" "$instance"; then
-            ((success_count++))
-        else
-            warn_message "⚠️  Failed to reboot instance: $instance"
-        fi
-    done
-    
-    if [[ $success_count -eq $total_count ]]; then
-        success_message "✅ Hard reboot operations completed successfully for all $total_count instance(s)"
-        return 0
-    else
-        warn_message "⚠️  Hard reboot operations completed with $((total_count - success_count)) failure(s) out of $total_count"
-        return 1
-    fi
-}
-
-# Execute hard shutdown for a single instance
-# Usage: execute_hard_shutdown_single_instance "dev" "athena"
-execute_hard_shutdown_single_instance() {
-    local env="$1"
-    local instance="$2"
-    
-    debug_message "Executing hard shutdown for single instance: $instance"
-    
-    # Use AWS_REGION environment variable
-    local aws_region="${AWS_REGION:-us-east-1}"
-    debug_message "Using AWS region: $aws_region"
-    
-    # Get instance ID using outputs API (if available)
-    local instance_id
-    if ! instance_id=$(get_instance_id_from_outputs "$env" "$instance"); then
-        warn_message "Could not get instance ID for $instance from outputs - AWS CLI may fail"
-        return 1
-    fi
-    
-    debug_message "Instance ID: $instance_id"
-    
-    # Use existing terminate_instance function from aws.sh
-    if terminate_instance "$instance_id" "$instance" "$aws_region"; then
-        success_message "✅ Hard shutdown completed for $instance"
-        return 0
-    else
-        warn_message "❌ Hard shutdown failed for $instance"
-        return 1
-    fi
-}
-
-# Execute hard reboot for a single instance
-# Usage: execute_hard_reboot_single_instance "dev" "athena"
-execute_hard_reboot_single_instance() {
-    local env="$1"
-    local instance="$2"
-    
-    debug_message "Executing hard reboot for single instance: $instance"
-    
-    # Use AWS_REGION environment variable
-    local aws_region="${AWS_REGION:-us-east-1}"
-    debug_message "Using AWS region: $aws_region"
-    
-    # Get instance ID using outputs API (if available)
-    local instance_id
-    if ! instance_id=$(get_instance_id_from_outputs "$env" "$instance"); then
-        warn_message "Could not get instance ID for $instance from outputs - AWS CLI may fail"
-        return 1
-    fi
-    
-    debug_message "Instance ID: $instance_id"
-    
-    # Use existing reboot_instance function from aws.sh
-    if reboot_instance "$instance_id" "$instance" "$aws_region"; then
-        success_message "✅ Hard reboot completed for $instance"
-        return 0
-    else
-        warn_message "❌ Hard reboot failed for $instance"
-        return 1
-    fi
-}
-
-# Execute terminate operation for multiple instances
-# Usage: execute_terminate_operation "dev" "athena" "metis"
-execute_terminate_operation() {
-    local env="$1"
-    shift
-    local instances=("$@")
-    
-    debug_message "Executing terminate operation for ${#instances[@]} instance(s): ${instances[*]}"
-    
-    # Handle dry-run mode
-    if is_dry_run; then
-        dry_run_message "[DRY-RUN] Would terminate instances via AWS CLI: ${instances[*]}"
-        for instance in "${instances[@]}"; do
-            dry_run_message "[DRY-RUN] Would execute: aws ec2 terminate-instances --instance-ids {$instance-id}"
-        done
-        info_message "ℹ️  [DRY-RUN] Terminate operation would complete successfully"
-        return 0
-    fi
-    
-    # Execute termination for each instance
-    local success_count=0
-    local total_count=${#instances[@]}
-    
-    for instance in "${instances[@]}"; do
-        if execute_terminate_single_instance "$env" "$instance"; then
-            ((success_count++))
-        else
-            warn_message "⚠️  Failed to terminate instance: $instance"
-        fi
-    done
-    
-    if [[ $success_count -eq $total_count ]]; then
-        success_message "✅ Terminate operation completed successfully for all $total_count instance(s)"
-        return 0
-    else
-        warn_message "⚠️  Terminate operation completed with $((total_count - success_count)) failure(s) out of $total_count"
-        return 1
-    fi
-}
-
-# Execute terminate for a single instance
-# Usage: execute_terminate_single_instance "dev" "athena"
-execute_terminate_single_instance() {
-    local env="$1"
-    local instance="$2"
-    
-    debug_message "Executing terminate for single instance: $instance"
-    
-    # Use AWS_REGION environment variable
-    local aws_region="${AWS_REGION:-us-east-1}"
-    debug_message "Using AWS region: $aws_region"
-    
-    # Get instance ID using outputs API (if available)
-    local instance_id
-    if ! instance_id=$(get_instance_id_from_outputs "$env" "$instance"); then
-        warn_message "Could not get instance ID for $instance from outputs - AWS CLI may fail"
-        return 1
-    fi
-    
-    debug_message "Instance ID: $instance_id"
-    
-    # Use existing terminate_instance function from aws.sh
-    if terminate_instance "$instance_id" "$instance" "$aws_region"; then
-        success_message "✅ Terminate completed for $instance"
-        return 0
-    else
-        warn_message "❌ Terminate failed for $instance"
-        return 1
-    fi
-}
-
-# Execute bounce operation (AWS CLI terminate -> wait -> destroy -> apply -> output)
+# Execute bounce operation (destroy → apply → output)
 # Usage: execute_bounce_operation "dev" "instances" "athena" "metis"
 execute_bounce_operation() {
     local env="$1"

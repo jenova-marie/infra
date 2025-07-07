@@ -2015,12 +2015,12 @@ EOF
         "shutdown")
             cat << 'EOF'
 ═══════════════════════════════════════════════════════════════════════════
-🔄 SHUTDOWN ACTION - Graceful Instance Management
+🔄 SHUTDOWN ACTION - Infrastructure Recreation Management
 ═══════════════════════════════════════════════════════════════════════════
 
 PURPOSE:
-  Unified command for shutdown-related operations with different behaviors 
-  based on flags. Supports both SSH-based operations and infrastructure recreation.
+  Unified command for infrastructure recreation operations with different behaviors 
+  based on flags. All operations use infrastructure management (destroy → apply → output).
 
 USAGE:
   ./infra shutdown <env:instance> [flags]
@@ -2040,77 +2040,64 @@ SUPPORTED TARGETS:
 OPERATION MODES:
 
   🏗️  BOUNCE MODE (--bounce)
-    Infrastructure recreation sequence: SSH shutdown → wait → destroy → apply → output
-    Purpose: Complete infrastructure rebuild with proper application shutdown
+    Infrastructure recreation sequence: destroy → apply → output
+    Purpose: Complete infrastructure rebuild with fresh state
     
     Process:
-      1. SSH shutdown (graceful application stop)
-      2. Wait for shutdown completion
-      3. Destroy instance infrastructure
-      4. Apply instance infrastructure (recreate)
-      5. Generate outputs
+      1. Destroy instance infrastructure
+      2. Apply instance infrastructure (recreate)
+      3. Generate outputs
     
     Use for: Major changes, troubleshooting, complete rebuilds
   
   🔄 REBOOT MODE (--reboot)  
-    SSH shutdown + AWS restart: SSH shutdown → wait → start
-    Purpose: Restart instances with proper application shutdown
+    Infrastructure recreation for restart: destroy → apply → output
+    Purpose: Restart instances with fresh infrastructure state
     
     Process:
-      1. SSH shutdown (graceful application stop)
-      2. Wait for shutdown completion
-      3. AWS CLI restart instance
-      4. Wait for startup completion
+      1. Destroy instance infrastructure
+      2. Apply instance infrastructure (recreate)
+      3. Generate outputs
     
     Use for: Software updates, troubleshooting, application restarts
   
   🧹 FLUSH MODE (--flush)
-    SSH-based cleanup and preparation operations
-    Purpose: Clean instance state without restart
+    Infrastructure recreation for cleanup: destroy → apply → output
+    Purpose: Clean instance state with fresh infrastructure
     
     Process:
-      1. SSH connection to instance
-      2. Execute cleanup scripts
-      3. Prepare instance for next operation
+      1. Destroy instance infrastructure
+      2. Apply instance infrastructure (recreate)
+      3. Generate outputs
     
     Use for: State cleanup, preparation, maintenance
   
   🛑 DEFAULT MODE (no flags)
-    SSH-based shutdown via remote scripts  
-    Purpose: Graceful instance shutdown
+    Infrastructure recreation: destroy → apply → output
+    Purpose: Standard infrastructure recreation
     
     Process:
-      1. SSH connection to instance
-      2. Execute shutdown scripts
-      3. Graceful application stop
+      1. Destroy instance infrastructure
+      2. Apply instance infrastructure (recreate)
+      3. Generate outputs
     
-    Use for: Normal shutdowns, maintenance windows
+    Use for: Normal infrastructure recreation, maintenance
 
 FLAGS:
   --bounce              Complete infrastructure rebuild
-                       • SSH shutdown → wait → destroy → apply → output
+                       • destroy → apply → output
                        • Full infrastructure recreation
                        • Use for major changes or troubleshooting
   
-  --reboot              Restart instance with SSH shutdown
-                       • SSH shutdown → wait → AWS restart
-                       • Graceful restart with application shutdown
+  --reboot              Restart with infrastructure recreation
+                       • destroy → apply → output
+                       • Fresh infrastructure state
                        • Use for software updates or troubleshooting
   
-  --flush               Clean instance state
-                       • SSH-based cleanup operations
-                       • No restart or infrastructure changes
+  --flush               Clean state with infrastructure recreation
+                       • destroy → apply → output
+                       • Fresh infrastructure state
                        • Use for state cleanup or preparation
-  
-  --hard                AWS CLI only (no SSH scripts)
-                       • Uses AWS CLI for all operations
-                       • Bypasses SSH-based graceful shutdown
-                       • Use when SSH is unavailable
-  
-  --terminate           Terminate instance
-                       • Permanently removes instance
-                       • Use with extreme caution!
-                       • Requires --force for confirmation
   
   --no-volumes          Recreate without volumes
                        • Instances recreated without EBS volumes
@@ -2159,7 +2146,7 @@ FLAGS:
                        • Format: us-west-2, us-east-1, etc.
 
 EXAMPLES:
-  # Standard graceful shutdown
+  # Standard infrastructure recreation
   ./infra shutdown dev:athena
   ./infra shutdown prod:aegis --backup
   
@@ -2167,20 +2154,13 @@ EXAMPLES:
   ./infra shutdown dev:athena --bounce
   ./infra shutdown prod:aegis --bounce --backup
   
-  # Restart with graceful shutdown
+  # Restart with infrastructure recreation
   ./infra shutdown dev:mnemosyne --reboot
   ./infra shutdown prod:athena --reboot --bell
   
-  # Clean instance state
+  # Clean state with infrastructure recreation
   ./infra shutdown dev:metis --flush
   ./infra shutdown dev:athena --flush --verbose 1
-  
-  # AWS CLI only (no SSH)
-  ./infra shutdown dev:athena --hard
-  ./infra shutdown prod:aegis --hard --force
-  
-  # Terminate instance (DANGEROUS!)
-  ./infra shutdown dev:athena --terminate --force
   
   # Recreate without volumes
   ./infra shutdown dev:athena --bounce --no-volumes
@@ -2190,20 +2170,19 @@ EXAMPLES:
   ./infra shutdown dev:athena --reboot --verbose 1
 
 REQUIREMENTS:
-  • Instance outputs must exist: ./infra output <env>:<instance>
-  • SSH access for graceful operations (except --hard mode)
-  • AWS CLI for --hard operations
+  • Valid Terragrunt configuration
   • Appropriate AWS credentials
+  • Target environment must exist
 
 POST-OPERATION:
-  • Outputs are regenerated for bounce operations
+  • Outputs are regenerated automatically
   • DNS records updated if --dns flag used
   • Volume configurations preserved (unless --no-volumes)
 
 ⚠️  SAFETY REMINDERS:
   • Use --dry-run to preview operations
   • Use --backup for production operations
-  • --terminate permanently removes instances
+  • Infrastructure recreation destroys and recreates instances
   • Test in dev environment before production
 
 EOF
