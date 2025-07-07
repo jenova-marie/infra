@@ -3,9 +3,9 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # Infrastructure Management System v2.0 - Output Management Module
 # ═══════════════════════════════════════════════════════════════════════════
-# Purpose: Centralized output generation, management, and cleanup
+# Purpose: Direct output generation to centralized location
 # Author: Infrastructure Management System v2.0
-# Last Updated: May 28, 2024
+# Last Updated: July 7, 2025
 
 set -euo pipefail
 
@@ -13,7 +13,7 @@ set -euo pipefail
 # Core Output Generation Functions
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Generate outputs for a single module
+# Generate outputs for a single module directly to centralized location
 # Usage: generate_module_outputs "athena"
 generate_module_outputs() {
     local module="$1"
@@ -28,6 +28,12 @@ generate_module_outputs() {
         debug_message "Module directory not found: $module"
         return 1
     fi
+    
+    # Use KISS utility functions for standardized paths
+    local centralized_file="$(get_module_output_path "$OP_ENV" "$module")"
+    
+    # Ensure centralized outputs directory exists using KISS function
+    ensure_output_directory "$OP_ENV"
     
     # Change to module directory
     local original_dir=$(pwd)
@@ -51,37 +57,34 @@ generate_module_outputs() {
         fi
     fi
     
-    # Generate outputs using simple terragrunt redirect (cleanest approach)
-    local output_file="output.json"
+    # Generate outputs directly to centralized location
     local success=true
     
-    debug_message "Generating outputs: terragrunt output --json > $output_file"
-        
-    # Use simple redirect - terragrunt sends JSON to stdout and logs to stderr
-    if terragrunt output --json > "$output_file" 2>/dev/null; then
-        # Check if the output file was created and has content (using KISS utility)
-        if file_exists_and_has_content "$output_file"; then
+    debug_message "Generating outputs directly to: $centralized_file"
+    
+    # Temp file for capturing error output
+    local terragrunt_err_file="/tmp/terragrunt_output_err_$$.log"
+    
+    # Generate outputs directly to centralized location
+    if terragrunt output --json > "$centralized_file" 2>"$terragrunt_err_file"; then
+        # Check if the output file was created and has content
+        if file_exists_and_has_content "$centralized_file"; then
             debug_message "Outputs generated successfully for module: $module"
-            
-            # Move to centralized location (using KISS variable)
-            move_module_outputs_to_centralized "$module" "$OP_ENV"
         else
             debug_message "No outputs available for module: $module (creating empty JSON for automation)"
-            # Create empty JSON object for automation consistency instead of deleting
-            echo "{}" > "$output_file"
-            
-            # Move to centralized location (empty JSON is still valid)
-            move_module_outputs_to_centralized "$module" "$OP_ENV"
+            echo "{}" > "$centralized_file"
         fi
     else
         debug_message "Terragrunt output command failed for module: $module (creating empty JSON for automation)"
-        # Create empty JSON object even on failure for automation consistency
-        echo "{}" > "$output_file"
-        
-        # Move to centralized location (empty JSON indicates no resources)
-        move_module_outputs_to_centralized "$module" "$OP_ENV"
+        # Print error output to console for debugging
+        if [[ -s "$terragrunt_err_file" ]]; then
+            echo "[ERROR] terragrunt output failed for module: $module" >&2
+            cat "$terragrunt_err_file" >&2
+        fi
+        echo "{}" > "$centralized_file"
         success=false
     fi
+    rm -f "$terragrunt_err_file"
     
     # Return to original directory
     cd "$original_dir"
@@ -100,7 +103,7 @@ generate_module_outputs_bg() {
     
     debug_message "Generating outputs for module (background): $module"
     
-    # Store original directory and make result_file absolute to prevent module directory pollution
+    # Store original directory and make result_file absolute
     local original_dir=$(pwd)
     local absolute_result_file="$original_dir/$result_file"
     
@@ -110,6 +113,12 @@ generate_module_outputs_bg() {
         echo "FAIL" > "$absolute_result_file"
         return 1
     fi
+    
+    # Use KISS utility functions for standardized paths
+    local centralized_file="$(get_module_output_path "$OP_ENV" "$module")"
+    
+    # Ensure centralized outputs directory exists using KISS function
+    ensure_output_directory "$OP_ENV"
     
     # Change to module directory
     cd "$module"
@@ -131,71 +140,42 @@ generate_module_outputs_bg() {
         fi
     fi
     
-    # Generate outputs using simple terragrunt redirect (cleanest approach)
-    local output_file="output.json"
+    # Generate outputs directly to centralized location
     local success=true
     
-    debug_message "Generating outputs (background): terragrunt output --json > $output_file"
-        
-    # Use simple redirect - terragrunt sends JSON to stdout and logs to stderr
-    if terragrunt output --json > "$output_file" 2>/dev/null; then
-        # Check if the output file was created and has content (using KISS utility)
-        if file_exists_and_has_content "$output_file"; then
+    debug_message "Generating outputs directly to (background): $centralized_file"
+    
+    # Temp file for capturing error output
+    local terragrunt_err_file="/tmp/terragrunt_output_err_$$.log"
+    
+    # Generate outputs directly to centralized location
+    if terragrunt output --json > "$centralized_file" 2>"$terragrunt_err_file"; then
+        # Check if the output file was created and has content
+        if file_exists_and_has_content "$centralized_file"; then
             debug_message "Outputs generated successfully for module (background): $module"
-            
-            # Move to centralized location (using KISS variable)
-            move_module_outputs_to_centralized "$module" "$OP_ENV"
             echo "SUCCESS" > "$absolute_result_file"
         else
             debug_message "No outputs available for module (background): $module (creating empty JSON for automation)"
-            # Create empty JSON object for automation consistency instead of deleting
-            echo "{}" > "$output_file"
-            
-            # Move to centralized location (empty JSON is still valid)
-            move_module_outputs_to_centralized "$module" "$OP_ENV"
+            echo "{}" > "$centralized_file"
             echo "SUCCESS" > "$absolute_result_file"
         fi
     else
         debug_message "Terragrunt output command failed for module (background): $module (creating empty JSON for automation)"
-        # Create empty JSON object even on failure for automation consistency
-        echo "{}" > "$output_file"
-        
-        # Move to centralized location (empty JSON indicates no resources)
-        move_module_outputs_to_centralized "$module" "$OP_ENV"
+        # Print error output to console for debugging
+        if [[ -s "$terragrunt_err_file" ]]; then
+            echo "[ERROR] terragrunt output failed for module: $module" >&2
+            cat "$terragrunt_err_file" >&2
+        fi
+        echo "{}" > "$centralized_file"
         echo "SUCCESS" > "$absolute_result_file"
         success=false
     fi
+    rm -f "$terragrunt_err_file"
     
     # Return to original directory
     cd "$original_dir"
     
     return $([ "$success" = true ] && echo 0 || echo 1)
-}
-
-# Move module outputs to centralized location (eliminates duplication)
-# Usage: move_module_outputs_to_centralized "athena" "dev"
-move_module_outputs_to_centralized() {
-    local module="$1"
-    local env="$2"
-    
-    debug_message "Moving outputs to centralized location for module: $module"
-    
-    # Use KISS utility functions for standardized paths
-    local module_output_file="$(get_module_path "$env" "$module")/output.json"
-    local centralized_file="$(get_module_output_path "$env" "$module")"
-    
-    # Ensure centralized outputs directory exists using KISS function
-    ensure_output_directory "$env"
-    
-    # Move outputs if they exist (eliminates duplication)
-    if file_exists_and_readable "$module_output_file"; then
-        execute_with_dry_run "mv '$module_output_file' '$centralized_file'" "Would move outputs: $module_output_file -> $centralized_file"
-        if ! is_dry_run; then
-            debug_message "Moved outputs: $module_output_file -> $centralized_file"
-        fi
-    else
-        debug_message "No outputs file to move for module: $module"
-    fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -265,9 +245,6 @@ generate_outputs_parallel() {
         fi
     done
     
-    # Also clean up any stray result files in module directories (from previous buggy runs)
-    cleanup_stray_result_files $(safe_array_elements "modules")
-    
     success_message "🎉 Parallel output generation completed for $wait_count module(s)"
 }
 
@@ -332,18 +309,8 @@ cleanup_destroyed_module_outputs() {
     
     for module in "${processed_modules[@]}"; do
         # Use KISS utilities for standardized paths
-        local module_output_file="$(get_module_path "$OP_ENV" "$module")/output.json"
         local centralized_file="$(get_module_output_path "$OP_ENV" "$module")"
         local files_removed=0
-        
-        # Remove any file or symlink in module directory (if it exists)
-        if [[ -f "$module_output_file" || -L "$module_output_file" ]]; then
-            execute_with_dry_run "rm -f '$module_output_file'" "Would remove output file/symlink: $module_output_file"
-            if ! is_dry_run; then
-                debug_message "Removed output file/symlink: $module_output_file"
-            fi
-            ((files_removed++))
-        fi
         
         # Remove centralized output file (the actual file)
         if [[ -f "$centralized_file" ]]; then
@@ -403,7 +370,6 @@ validate_output_files() {
     while IFS= read -r module; do
         if [[ -n "$module" ]]; then
             # Use KISS utilities for standardized paths
-            local module_output_file="$(get_module_path "$OP_ENV" "$module")/output.json"
             local centralized_file="$(get_module_output_path "$OP_ENV" "$module")"
             
             # Ensure centralized output file exists (create empty JSON if missing)
@@ -411,15 +377,6 @@ validate_output_files() {
                 execute_with_dry_run "ensure_directory '$(dirname "$centralized_file")' && echo '{}' > '$centralized_file'" "Would create missing centralized output: $centralized_file"
                 if ! is_dry_run; then
                     debug_message "Created missing centralized output file: $centralized_file"
-                fi
-                ((validation_count++))
-            fi
-            
-            # Remove any existing file or symlink in module directory to prevent conflicts
-            if [[ -f "$module_output_file" || -L "$module_output_file" ]]; then
-                execute_with_dry_run "rm -f '$module_output_file'" "Would remove existing output file/symlink: $module_output_file"
-                if ! is_dry_run; then
-                    debug_message "Removed existing output file/symlink: $module_output_file"
                 fi
                 ((validation_count++))
             fi
@@ -437,100 +394,6 @@ validate_output_files() {
     fi
     
     debug_message "Output file validation completed"
-    return 0
-}
-
-# Clean up stray result files from module directories (from previous buggy runs)
-# Usage: cleanup_stray_result_files "module1" "module2" "module3"
-cleanup_stray_result_files() {
-    local modules=("$@")
-    
-    if [[ ${#modules[@]} -eq 0 ]]; then
-        debug_message "No modules provided for stray result file cleanup"
-        return 0
-    fi
-    
-    debug_message "Cleaning up stray result files from module directories and terragrunt cache"
-    
-    # Use KISS approach - get operation context for consistent environment access
-    get_operation_context
-    
-    local cleaned_count=0
-    
-    # Check each module directory for stray result files
-    for module in "${modules[@]}"; do
-        if [[ -n "$module" && -d "$module" ]]; then
-            # Look for any .result files in the module directory
-            local result_pattern="$module/*.result"
-            if compgen -G "$result_pattern" > /dev/null 2>&1; then
-                for stray_file in $module/*.result; do
-                    if [[ -f "$stray_file" ]]; then
-                        rm -f "$stray_file"
-                        debug_message "Removed stray result file: $stray_file"
-                        ((cleaned_count++))
-                    fi
-                done
-            fi
-            
-            # Also clean up terragrunt cache directories within this module
-            if [[ -d "$module/.terragrunt-cache" ]]; then
-                local cache_result_files=$(find "$module/.terragrunt-cache" -name "*.result" -type f 2>/dev/null || true)
-                if [[ -n "$cache_result_files" ]]; then
-                    while IFS= read -r cache_file; do
-                        if [[ -f "$cache_file" ]]; then
-                            rm -f "$cache_file"
-                            debug_message "Removed cached result file: $cache_file"
-                            ((cleaned_count++))
-                        fi
-                    done <<< "$cache_result_files"
-                fi
-            fi
-        fi
-    done
-    
-    if [[ $cleaned_count -gt 0 ]]; then
-        debug_message "Cleaned up $cleaned_count stray result files from module directories and cache"
-    else
-        debug_message "No stray result files found in module directories or cache"
-    fi
-    
-    return 0
-}
-
-# Global cleanup of all stray result files in the entire environment
-# Usage: cleanup_all_stray_result_files "env"
-cleanup_all_stray_result_files() {
-    local env="${1:-$OP_ENV}"
-    
-    debug_message "Performing global cleanup of all stray result files in environment: $env"
-    
-    local env_path="$(get_environment_path "$env")"
-    local cleaned_count=0
-    
-    if [[ ! -d "$env_path" ]]; then
-        debug_message "Environment path not found: $env_path"
-        return 0
-    fi
-    
-    # Find and remove all .result files in the environment
-    local all_result_files=$(find "$env_path" -name "*.result" -type f 2>/dev/null || true)
-    
-    if [[ -n "$all_result_files" ]]; then
-        while IFS= read -r result_file; do
-            if [[ -f "$result_file" ]]; then
-                rm -f "$result_file"
-                debug_message "Removed global stray result file: $result_file"
-                ((cleaned_count++))
-            fi
-        done <<< "$all_result_files"
-    fi
-    
-    if [[ $cleaned_count -gt 0 ]]; then
-        info_message "🧹 Cleaned up $cleaned_count stray result files from environment: $env"
-    else
-        debug_message "No stray result files found in environment: $env"
-    fi
-    
     return 0
 }
 
@@ -610,10 +473,6 @@ execute_output_operation() {
     else
         debug_message "Skipping consolidated IPs file generation (no relevant modules processed)"
     fi
-    
-    # Perform proactive cleanup of stray result files
-    debug_message "Performing post-operation cleanup of stray result files"
-    cleanup_all_stray_result_files "$OP_ENV"
 }
 
 # Clean output files for target
