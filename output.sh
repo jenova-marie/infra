@@ -704,13 +704,8 @@ execute_automatic_output_generation() {
     
     info_message "Automatically generating outputs for ${#processed_modules[@]} processed modules"
     
-    # CRITICAL: Enable refresh for automatic output generation to avoid stale state
-    # This prevents race conditions where EIP associations haven't propagated yet
-    local original_refresh_flag="$REFRESH"
-    REFRESH=true
-    export REFRESH
-    
-    debug_message "Enabled refresh for automatic output generation to ensure fresh state"
+    # Do NOT force refresh; respect the user's original REFRESH flag
+    debug_message "Respecting user-supplied refresh flag: $REFRESH"
     
     # Generate outputs in parallel for better performance
     generate_outputs_parallel "${processed_modules[@]}"
@@ -737,11 +732,7 @@ execute_automatic_output_generation() {
         debug_message "Skipping consolidated IPs file generation (no relevant modules processed)"
     fi
     
-    # Restore original refresh flag
-    REFRESH="$original_refresh_flag"
-    export REFRESH
-    
-    debug_message "Restored original refresh flag: $original_refresh_flag"
+    debug_message "Automatic output generation complete. Refresh flag was: $REFRESH"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
