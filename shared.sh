@@ -29,7 +29,8 @@ declare -r NC='\033[0m' # No Color
 # System constants
 declare -r SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 declare -r PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-declare -r LIVE_ROOT="$PROJECT_ROOT/src/live"
+# Use LIVE_HOME environment variable if set, otherwise fallback to PROJECT_ROOT/src/live
+declare -r LIVE_ROOT="${LIVE_HOME:-$PROJECT_ROOT/src/live}"
 
 # Global state variables (set by other modules)
 VERBOSE_LEVEL=0
