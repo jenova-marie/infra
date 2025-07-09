@@ -138,6 +138,23 @@ execute_bounce_sequence() {
     
     if execute_standard_operation_with_params "apply" "$env" "$target_type"; then
         success_message "✅ Apply phase completed"
+        # ─────────────────────────────────────────────────────────────
+        # Gateway Instance: Trigger VPCs Apply After Bounce
+        # Only for single instance bounces (not all/instances)
+        if [[ "$target_type" != "all" && "$target_type" != "instances" && "$target_type" != "infrastructure" ]]; then
+            # Ensure modules are loaded for the environment
+            load_modules "$env"
+            if get_module_type "$target_type" 2>/dev/null | grep -q "instance"; then
+                if is_instance_gateway "$target_type"; then
+                    info_message "🚦 Gateway instance '$target_type' bounced; reapplying VPCs to sync routes."
+                    if ! execute_standard_operation_with_params "apply" "$env" "vpcs"; then
+                        error_message "❌ Failed to reapply VPCs after gateway instance bounce."
+                    else
+                        success_message "✅ VPCs reapplied after gateway instance bounce."
+                    fi
+                fi
+            fi
+        fi
     else
         handle_error "❌ Apply phase failed during bounce sequence"
     fi
