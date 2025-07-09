@@ -1,6 +1,6 @@
 # 📁 Project Structure Documentation v2.0
 
-**Last Updated:** December 30, 2024 at 11:55 PM CST  
+**Last Updated:** January 14, 2025 at 10:00 AM CST  
 **Purpose:** Documentation of the simplified project structure and organization with KISS utilities and cleanup
 
 **Version:** v2.0.14 - Test Mode Infrastructure & Error Handling Consolidation ✅
@@ -847,3 +847,11 @@ wait_for_instance_state "environment" "instance_name" "target_state" [timeout] [
 ---
 
 **This structure documentation reflects the current state of the Infrastructure Management System v2.0.13, emphasizing the DRY refactoring achievements, enhanced AWS CLI integration, and maintained SSH-first architectural principles.** 💖 
+
+---
+
+### **Gateway Instance Automation**
+
+- Instance modules in `modules.yml` can include a `gateway: true` property.
+- When a gateway instance is applied or destroyed, the system will automatically reapply the VPCs module immediately after.
+- This ensures VPC routing tables are always in sync with gateway instance changes. 

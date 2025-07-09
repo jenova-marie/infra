@@ -129,6 +129,23 @@ execute_standard_operation() {
             # For other state-modifying operations (apply), generate outputs
             execute_automatic_output_generation
         fi
+        # ─────────────────────────────────────────────────────────────────
+        # Gateway Instance: Trigger VPCs Apply After Apply/Destroy
+        # Only for single instance operations (not all/instances/infrastructure)
+        if [[ "$OP_TARGET_TYPE" != "all" && "$OP_TARGET_TYPE" != "instances" && "$OP_TARGET_TYPE" != "infrastructure" ]]; then
+            # Check if the target is an instance and a gateway
+            if get_module_type "$OP_TARGET_TYPE" 2>/dev/null | grep -q "instance"; then
+                if is_instance_gateway "$OP_TARGET_TYPE"; then
+                    info_message "🚦 Gateway instance '$OP_TARGET_TYPE' modified; reapplying VPCs to sync routes."
+                    # Call VPCs apply (idempotent)
+                    if ! execute_standard_operation_with_params "$OP_ACTION" "$OP_ENV" "vpcs"; then
+                        error_message "❌ Failed to reapply VPCs after gateway instance modification."
+                    else
+                        success_message "✅ VPCs reapplied after gateway instance modification."
+                    fi
+                fi
+            fi
+        fi
     else
         handle_error "Terragrunt $OP_ACTION failed"
     fi

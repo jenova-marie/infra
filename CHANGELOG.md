@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.23] - 2025-01-14 - Gateway Instance Triggers VPCs Apply 🚦✨
+
+### 🎯 **Feature: Automatic VPCs Apply After Gateway Instance Modification**
+
+#### **New Behavior**
+- When an instance marked as `gateway: true` in `modules.yml` is applied or destroyed, the VPCs module is automatically reapplied immediately after.
+- This ensures VPC routes are always in sync with the gateway instance's NIC ID.
+- Only triggers for single gateway instance operations (not for all/instances/infrastructure targets).
+
+#### **Technical Details**
+- `modules.sh` now parses the `gateway` property for instances and tracks gateway status in an associative array.
+- `operations.sh` checks if the target is a gateway instance after apply/destroy and triggers a VPCs apply if so.
+- Logging and error handling follow project conventions.
+
+#### **Files Modified**
+- `infra/modules.sh` - Gateway flag parsing, `is_instance_gateway` function
+- `infra/operations.sh` - Post-action VPCs apply logic for gateway instances
+
+#### **Why**
+- Keeps VPC routing tables in sync with gateway instance changes
+- Reduces manual steps and risk of stale routes
+- Follows DRY KISS and automation principles
+
+---
+
 ## [2.0.22] - 2025-01-03 - Destroy Operations Now Properly Remove Output Files 🗑️✨
 
 ### 🎯 **Critical Fix: Destroy Operations Remove Output Files Instead of Creating Empty Ones**

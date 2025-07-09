@@ -1,6 +1,6 @@
 # Infrastructure Management System v2.0
 
-**Last Updated:** January 13, 2025 at 11:05 PM CST
+**Last Updated:** January 14, 2025 at 10:00 AM CST
 
 **Version:** 2.0  
 **Purpose:** Simplified, reliable infrastructure orchestration for Terraform/Terragrunt with DRY AWS CLI integration
@@ -91,6 +91,33 @@ terragrunt destroy --all --queue-exclude-dir=athena,metis,mnemosyne
 - **Automatic Exclusion Generation** - System calculates exclusions based on target
 - **Backward Compatible** - All existing commands work unchanged
 - **Enhanced Error Handling** - Improved reliability with no path resolution issues
+
+---
+
+## 🚦 **Gateway Instance: Automatic VPCs Apply**
+
+### **What’s New?**
+- When you apply or destroy an instance marked as `gateway: true` in `modules.yml`, the system will automatically reapply the VPCs module immediately after.
+- This keeps VPC routing tables in sync with the gateway instance’s NIC ID, reducing manual steps and risk of stale routes.
+
+### **How to Use**
+
+**Mark an instance as a gateway in your modules.yml:**
+```yaml
+instances:
+  - name: nyx
+    gateway: true
+  - name: metis
+```
+
+**Behavior:**
+- `./infra apply dev:nyx` → applies `nyx`, then immediately applies `vpcs`.
+- `./infra destroy dev:nyx` → destroys `nyx`, then immediately applies `vpcs`.
+- Only triggers for single gateway instance operations (not for all/instances/infrastructure targets).
+
+### **Why?**
+- Ensures VPC routes are always up to date after gateway changes.
+- Follows DRY KISS and automation principles.
 
 ---
 

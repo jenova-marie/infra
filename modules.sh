@@ -26,6 +26,9 @@ ALL_MODULES=()
 PROTECTED_MODULES=()     # modules with protected: true
 DISABLED_MODULES=()      # modules with disabled: true
 
+# Gateway instance tracking (Bash 3.x compatible)
+GATEWAY_INSTANCES=()  # indexed array: GATEWAY_INSTANCES=(nyx ...)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Core Module Loading - DRY KISS Implementation
 # ─────────────────────────────────────────────────────────────────────────────
@@ -135,6 +138,9 @@ load_instance_modules() {
     
     debug_message "Loading instance modules from: $modules_file"
     
+    # Clear gateway tracking
+    GATEWAY_INSTANCES=()
+    
     # Load all instance modules (now all are objects with name field)
     while IFS= read -r module; do
         if [[ -n "$module" ]]; then
@@ -153,6 +159,12 @@ load_instance_modules() {
                 if [[ "$is_protected" == "true" ]]; then
                     PROTECTED_MODULES+=("$module")
                     debug_message "Protected instance module: $module"
+                fi
+                # Check if gateway instance
+                local is_gateway=$(yq eval ".instances[] | select(.name == \"$module\") | .gateway // false" "$modules_file" 2>/dev/null || echo "false")
+                if [[ "$is_gateway" == "true" ]]; then
+                    GATEWAY_INSTANCES+=("$module")
+                    debug_message "Gateway instance detected: $module"
                 fi
             fi
         fi
@@ -271,6 +283,19 @@ get_module_type() {
     else
         handle_error "Module '$module' not found in modules.yml"
     fi
+}
+
+# Check if an instance is a gateway (Bash 3.x compatible)
+# Usage: is_instance_gateway "nyx"
+is_instance_gateway() {
+    local instance="$1"
+    local gw
+    for gw in "${GATEWAY_INSTANCES[@]}"; do
+        if [[ "$gw" == "$instance" ]]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
