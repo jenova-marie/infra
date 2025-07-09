@@ -7,9 +7,11 @@
         "command": "npx -y @cyanheads/git-mcp-server"
       },
       "memory-bank": {
+        "project_id": "infra",
         "command": "npx -y memory-bank-mcp"
       },
       "knowledge-graph": {
+        "project_id": "infra",
         "command": "npx -y knowledgegraph-mcp"
       },
       "filesystem": {
