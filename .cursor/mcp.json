@@ -1,0 +1,23 @@
+{
+    "mcpServers": {
+      "context7": {
+        "command": "npx -y @upstash/context7-mcp"
+      },
+      "git-mcp": {
+        "command": "npx -y @cyanheads/git-mcp-server"
+      },
+      "memory-bank": {
+        "command": "npx -y memory-bank-mcp"
+      },
+      "knowledge-graph": {
+        "command": "npx -y knowledgegraph-mcp"
+      },
+      "filesystem": {
+        "command": "npx -y @modelcontextprotocol/server-filesystem ."
+      },
+      "tavily": {
+        "command": "npx -y tavily-mcp"
+      }
+    }
+  }
+  
