@@ -16,6 +16,7 @@ set -euo pipefail
 # Display operation summary
 # Usage: show_operation_summary
 show_operation_summary() {
+    if [[ "${QUIET_MODE:-0}" -eq 1 ]]; then return; fi
     # Use KISS approach - get all operation context in one call
     get_operation_context
     

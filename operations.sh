@@ -43,10 +43,20 @@ execute_operation() {
         "reboot")
             execute_reboot_operation
             ;;
+        "query")
+            execute_query_operation
+            ;;
         *)
             handle_error "Unsupported operation: $ACTION"
             ;;
     esac
+}
+
+# Add the query operation executor
+execute_query_operation() {
+    debug_message "Executing query operation"
+    # Source the query module and run its main logic
+    source "$SCRIPT_DIR/query.sh"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

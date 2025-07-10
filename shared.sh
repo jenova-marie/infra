@@ -534,12 +534,12 @@ validate_action() {
     debug_message "Validating action: $action"
     
     case "$action" in
-        "apply"|"destroy"|"plan"|"init"|"output"|"clean"|"volume"|"shutdown"|"verify"|"status"|"reboot")
+        "apply"|"destroy"|"plan"|"init"|"output"|"clean"|"volume"|"shutdown"|"verify"|"status"|"reboot"|"query")
             debug_message "Action validation successful: $action"
             return 0
             ;;
         *)
-            handle_error "Invalid action: $action. Supported actions: apply, destroy, plan, init, output, clean, volume, shutdown, verify, status, reboot"
+            handle_error "Invalid action: $action. Supported actions: apply, destroy, plan, init, output, clean, volume, shutdown, verify, status, reboot, query"
             return 1
             ;;
     esac

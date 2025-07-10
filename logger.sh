@@ -56,6 +56,7 @@ setup_logging() {
     set_global_vars "$VERBOSE_LEVEL" "$NO_COLOR" "$DRY_RUN" "$env" "$DEBUG_LOG_FILE" "$HUMAN_LOG_FILE"
     
     debug_message "Logging initialized for session: $LOG_SESSION_ID"
+    if [[ "${QUIET_MODE:-0}" -eq 1 ]]; then return; fi
     info_message "Logs will be written to: $LOG_DIRECTORY"
 }
 

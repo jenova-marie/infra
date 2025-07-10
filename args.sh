@@ -88,6 +88,9 @@ parse_arguments() {
         "status")
             parse_status_operation_args "$@"
             ;;
+        "query")
+            parse_query_operation_args "$@"
+            ;;
         *)
             handle_error "Unknown action: $ACTION"
             ;;
@@ -586,6 +589,21 @@ parse_status_operation_args() {
     parse_standard_operation_args "$@"
     
     debug_message "Status operation argument parsing completed"
+}
+
+# Add a new function to parse query arguments
+parse_query_operation_args() {
+    debug_message "Parsing query operation arguments: $*"
+    if [[ $# -ne 2 ]]; then
+        handle_error "Query operation requires two arguments: <env>:<target>[,<target2>...] <path>"
+        return 1
+    fi
+    TARGET="$1"
+    QUERY_PATH="$2"
+    # Parse target into environment and target type (for consistency)
+    parse_target "$TARGET" || return 1
+    ENVIRONMENT="$PARSED_ENV"
+    TARGET_TYPE="$PARSED_TARGET"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2220,6 +2238,98 @@ REQUIREMENTS:
   • AWS CLI installed and configured
   • Instance outputs must exist: ./infra output <env>:<instance>
   • AWS credentials with EC2 reboot permissions
+
+EOF
+            ;;
+        "query")
+            cat << 'EOF'
+═══════════════════════════════════════════════════════════════════════════
+🔍 QUERY ACTION - Retrieve Infrastructure Data
+═══════════════════════════════════════════════════════════════════════════
+
+PURPOSE:
+  Retrieve data from infrastructure modules based on a query path.
+
+USAGE:
+  ./infra query <env>:<target>[,<target2>...] <path>
+
+PARAMETERS:
+  <env>:<target>[,<target2>...]
+                        Target specification (required)
+                        Format: <environment>:<module-type|module-name>[,<module-type|module-name>...]
+  <path>                Query path (required)
+                        Format: <module-path>.<output-name>
+
+SUPPORTED TARGETS:
+  dev:infrastructure     All infrastructure modules (VPC, security, networking)
+  dev:instances         All instance modules (athena, aegis, mnemosyne) 
+  dev:all              All modules (infrastructure + instances)
+  dev:athena           Single module deployment
+  prod:infrastructure   Production infrastructure
+  prod:all             All production modules
+
+FLAGS:
+  --dry-run            Preview what would be queried without executing
+                       • Shows exact commands that would run
+                       • Safe for testing and validation
+                       • No state changes made
+  
+  --verbose [0|1]      Control output verbosity
+                         • 0: Standard output (default)
+                         • 1: Debug output with detailed logging
+                         • Shows command execution, timing, paths
+  
+  --no-color           Disable colored output
+                         • Useful for logging to files
+                         • Better for CI/CD environments
+  
+  --backup             Create backup files
+                         • Recommended for production operations
+                         • Backs up volume configurations
+                         • Creates timestamped backups
+  
+  --bell               Ring terminal bell on completion
+                         • Audio notification for long operations
+                         • Useful for background operations
+  
+  --dns                Update DNS records after operation
+                         • Automatically updates DNS after changes
+                         • Requires DNS module to be configured
+  
+  --no-known-hosts-cleanup
+                         Disable known_hosts cleanup for SSH operations
+                         • Keeps SSH known_hosts entries
+                         • Useful for debugging SSH connections
+  
+  --test-mode          Enable test mode (errors return instead of exit)
+                         • Useful for testing and automation
+                         • Errors return exit codes instead of exiting
+  
+  --region <aws-region> Manually specify AWS region
+                         • Override automatic region detection
+                         • Format: us-west-2, us-east-1, etc.
+
+EXAMPLES:
+  # Query infrastructure data
+  ./infra query dev:infrastructure.eips
+  ./infra query dev:instances.athena.ip
+  ./infra query dev:all.security_groups.sg-1
+  
+  # Query multiple targets
+  ./infra query dev:infrastructure,instances.athena.ip,security_groups.sg-1
+  
+  # Query production data
+  ./infra query prod:infrastructure --backup --bell --dns
+
+REQUIREMENTS:
+  • Valid Terragrunt configuration
+  • Appropriate AWS credentials
+  • Target environment must exist
+
+POST-QUERY:
+  • Outputs are automatically generated
+  • Volume configurations are preserved
+  • DNS records updated if --dns flag used
 
 EOF
             ;;
