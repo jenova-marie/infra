@@ -1,5 +1,11 @@
 # Active Context
 
+## Code Changes (2025-07-11 06:14:56)
+
+### Added Files
+- .cursor/mcp.json
+
+
 ## Current Work Focus
 [Describe what you're currently working on]
 
