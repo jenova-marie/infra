@@ -314,23 +314,23 @@ cleanup_destroyed_module_outputs() {
     
     debug_message "Removing output files for destroyed modules"
     
-    # Get target modules that were processed
-    local processed_modules=()
-    while IFS= read -r module; do
-        [[ -n "$module" ]] && processed_modules+=("$module")
-    done < <(get_modules_for_target "$target_type")
+    # CRITICAL FIX: Get modules that were ACTUALLY destroyed, not just targeted
+    # Protected modules are excluded from destroy operations but get_modules_for_target 
+    # returns ALL target modules including protected ones that weren't destroyed
+    local actually_destroyed_modules=()
+    actually_destroyed_modules=($(get_actually_destroyed_modules "$target_type"))
     
-    if [[ ${#processed_modules[@]} -eq 0 ]]; then
-        debug_message "No modules to remove outputs for"
+    if [[ ${#actually_destroyed_modules[@]} -eq 0 ]]; then
+        debug_message "No modules were actually destroyed (all were protected or excluded)"
         return 0
     fi
     
-    info_message "🗑️  Removing output files for ${#processed_modules[@]} destroyed modules"
+    info_message "🗑️  Removing output files for ${#actually_destroyed_modules[@]} actually destroyed modules"
     
-    # Remove output files for each destroyed module
+    # Remove output files for each actually destroyed module
     local processed_count=0
     
-    for module in "${processed_modules[@]}"; do
+    for module in "${actually_destroyed_modules[@]}"; do
         # Use KISS utilities for standardized paths
         local module_output_file="$(get_module_path "$OP_ENV" "$module")/output.json"
         local centralized_file="$(get_module_output_path "$OP_ENV" "$module")"
@@ -372,6 +372,119 @@ cleanup_destroyed_module_outputs() {
     
     debug_message "Output file removal completed"
     return 0
+}
+
+# Get modules that were actually destroyed (target modules minus excluded modules)
+# Usage: get_actually_destroyed_modules "infrastructure"
+get_actually_destroyed_modules() {
+    local target_type="$1"
+    
+    debug_message "Calculating modules that were actually destroyed for target: $target_type"
+    
+    # Get all target modules
+    local target_modules=()
+    while IFS= read -r module; do
+        [[ -n "$module" ]] && target_modules+=("$module")
+    done < <(get_modules_for_target "$target_type")
+    
+    # Get excluded modules (these were NOT destroyed)
+    local excluded_modules=()
+    
+    # Parse exclusions from the same logic used during destroy
+    # Always exclude disabled modules
+    while IFS= read -r module; do
+        [[ -n "$module" ]] && excluded_modules+=("$module")
+    done < <(get_disabled_modules)
+    
+    # Add target-specific exclusions
+    case "$target_type" in
+        "infrastructure"|"instances")
+            # For infrastructure or instances, exclude the other type
+            if [[ "$target_type" == "infrastructure" ]]; then
+                while IFS= read -r module; do
+                    [[ -n "$module" ]] && excluded_modules+=("$module")
+                done < <(get_instance_modules)
+            else
+                while IFS= read -r module; do
+                    [[ -n "$module" ]] && excluded_modules+=("$module")
+                done < <(get_infrastructure_modules)
+            fi
+            
+            # For destroy operations without --force, exclude protected modules
+            if [[ "${OP_ACTION:-}" == "destroy" ]] && ! (declare -f is_force >/dev/null 2>&1 && is_force); then
+                debug_message "Destroy operation detected - adding protected modules to exclusions"
+                while IFS= read -r module; do
+                    if [[ -n "$module" ]]; then
+                        excluded_modules+=("$module")
+                        debug_message "Protected module excluded from destroy: $module"
+                    fi
+                done < <(get_protected_modules)
+            fi
+            ;;
+            
+        "all")
+            # For 'all' operations, exclude disabled and protected modules as needed
+            
+            # For destroy operations without --force, exclude protected modules
+            if [[ "${OP_ACTION:-}" == "destroy" ]] && ! (declare -f is_force >/dev/null 2>&1 && is_force); then
+                debug_message "Destroy operation detected for 'all' target - adding protected modules to exclusions"
+                while IFS= read -r module; do
+                    if [[ -n "$module" ]]; then
+                        excluded_modules+=("$module")
+                        debug_message "Protected module excluded from destroy: $module"
+                    fi
+                done < <(get_protected_modules)
+            fi
+            ;;
+            
+        *)
+            # Single module operation - exclude everything else
+            while IFS= read -r module; do
+                if [[ "$module" != "$target_type" ]]; then
+                    excluded_modules+=("$module")
+                fi
+            done < <(get_all_modules)
+            
+            # For destroy operations without --force, check if target module is protected
+            if [[ "${OP_ACTION:-}" == "destroy" ]] && ! (declare -f is_force >/dev/null 2>&1 && is_force); then
+                if is_module_protected "$target_type"; then
+                    # Target module itself is protected - no modules destroyed
+                    debug_message "Target module $target_type is protected - no modules destroyed"
+                    return 0
+                fi
+            fi
+            ;;
+    esac
+    
+    # Calculate actually destroyed modules: target_modules - excluded_modules
+    local actually_destroyed=()
+    
+    for target_module in "${target_modules[@]}"; do
+        local is_excluded=false
+        
+        # Check if this target module is in the excluded list
+        for excluded_module in "${excluded_modules[@]}"; do
+            if [[ "$target_module" == "$excluded_module" ]]; then
+                is_excluded=true
+                debug_message "Module $target_module was excluded from destroy (protected/disabled)"
+                break
+            fi
+        done
+        
+        # If not excluded, it was actually destroyed
+        if [[ "$is_excluded" == false ]]; then
+            actually_destroyed+=("$target_module")
+            debug_message "Module $target_module was actually destroyed"
+        fi
+    done
+    
+    # Output the actually destroyed modules
+    if [[ ${#actually_destroyed[@]} -gt 0 ]]; then
+        debug_message "Actually destroyed modules: ${actually_destroyed[*]}"
+        printf '%s\n' "${actually_destroyed[@]}"
+    else
+        debug_message "No modules were actually destroyed"
+    fi
 }
 
 # Validate and maintain output file consistency

@@ -6,6 +6,82 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.24] - 2025-01-14 - Critical Fix: Protected Module Output Files Preserved During Destroy 🛡️✨
+
+### 🎯 **Critical Fix: Protected Module Output Files Now Preserved During Infrastructure Destroy**
+
+#### **Problem Identified**
+- **Output files deleted for protected modules**: `infra destroy dev:infrastructure` was deleting output files for protected modules (eips, ebss, ecrs) even though they weren't destroyed
+- **Wrong behavior**: `cleanup_destroyed_module_outputs()` was using `get_modules_for_target()` which returns ALL target modules, including protected ones that were excluded from destroy
+- **Root cause**: The function didn't account for the exclusion logic that protects modules during destroy operations
+
+#### **Technical Analysis**
+```bash
+# What was happening (WRONG):
+infra destroy dev:infrastructure
+→ terragrunt destroy --queue-exclude-dir=eips,ebss,ecrs  # Protected modules excluded from destroy
+→ cleanup_destroyed_module_outputs("infrastructure")
+→ get_modules_for_target("infrastructure") returns [vpcs, security_groups, endpoints, eips, ebss, ecrs]
+→ Deletes output files for ALL modules, including protected ones that weren't destroyed! ❌
+
+# What should happen (CORRECT):
+infra destroy dev:infrastructure  
+→ terragrunt destroy --queue-exclude-dir=eips,ebss,ecrs  # Protected modules excluded from destroy
+→ cleanup_destroyed_module_outputs("infrastructure")
+→ get_actually_destroyed_modules("infrastructure") returns [vpcs, security_groups, endpoints]
+→ Only deletes outputs for modules that were ACTUALLY destroyed ✅
+→ Preserves outputs for protected modules [eips, ebss, ecrs] ✅
+```
+
+#### **KISS Solution Implementation**
+- **New function**: `get_actually_destroyed_modules()` calculates which modules were actually destroyed by subtracting excluded modules from target modules
+- **Fixed logic**: `cleanup_destroyed_module_outputs()` now uses the new function instead of `get_modules_for_target()`
+- **Exclusion awareness**: The new function replicates the same exclusion logic used during destroy operations
+- **Protected module preservation**: Output files for protected modules are now preserved during destroy operations
+
+#### **New Behavior** ✅
+- **Infrastructure destroy**: Only removes outputs for non-protected modules (vpcs, security_groups, endpoints)
+- **Protected modules**: Output files for eips, ebss, ecrs are preserved even during infrastructure destroy
+- **Force flag**: When `--force` is used, protected modules are actually destroyed and their outputs are removed
+- **Consistent logic**: Uses the same exclusion logic as the actual destroy operation
+
+#### **Testing Scenarios** ✅
+```bash
+# Scenario 1: Infrastructure destroy (without --force)
+./infra destroy dev:infrastructure
+→ Destroys: vpcs, security_groups, endpoints
+→ Preserves: eips, ebss, ecrs (protected modules)
+→ Removes outputs for: vpcs, security_groups, endpoints only
+→ Keeps outputs for: eips, ebss, ecrs
+
+# Scenario 2: Infrastructure destroy (with --force)
+./infra destroy dev:infrastructure --force
+→ Destroys: ALL infrastructure modules including protected ones
+→ Removes outputs for: ALL infrastructure modules
+
+# Scenario 3: Single protected module destroy (without --force)
+./infra destroy dev:eips
+→ Destroys: nothing (eips is protected)
+→ Removes outputs for: nothing
+→ Keeps outputs for: eips
+
+# Scenario 4: Single protected module destroy (with --force)
+./infra destroy dev:eips --force
+→ Destroys: eips (protection overridden)
+→ Removes outputs for: eips
+```
+
+#### **Files Modified**
+- `infra/output.sh` - Added `get_actually_destroyed_modules()` function and updated `cleanup_destroyed_module_outputs()`
+
+#### **Why This Fix is Critical**
+- **Data integrity**: Protected modules like EBS volumes and EIPs contain critical state information
+- **Automation reliability**: Systems depending on output files for protected modules were breaking
+- **User expectation**: Users expect protected modules to remain untouched, including their outputs
+- **Consistency**: The cleanup logic now matches the actual destroy operation logic
+
+---
+
 ## [2.0.23] - 2025-01-14 - Gateway Instance Triggers VPCs Apply 🚦✨
 
 ### 🎯 **Feature: Automatic VPCs Apply After Gateway Instance Modification**

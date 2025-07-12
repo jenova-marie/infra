@@ -1,8 +1,8 @@
 # Infrastructure Management System v2.0
 
-**Last Updated:** January 14, 2025 at 10:00 AM CST
+**Last Updated:** January 14, 2025 at 10:30 AM CST
 
-**Version:** 2.0  
+**Version:** 2.0.24  
 **Purpose:** Simplified, reliable infrastructure orchestration for Terraform/Terragrunt with DRY AWS CLI integration
 
 ---
@@ -16,6 +16,7 @@ This system follows a **"simplicity first"** approach with these core principles
 - **Centralized Flag Management**: All terragrunt flags are handled centrally by `execute_terragrunt()`
 - **Parallel Output Generation**: Multiple modules process outputs simultaneously for optimal performance
 - **Automatic Output Generation**: State-changing operations automatically generate outputs
+- **Protected Module Preservation**: Output files for protected modules are preserved during destroy operations
 - **Consistent Environment Context**: All operations execute from the correct environment directory
 - **Modular Shared Code**: Common operations (parsing, formatting, validation) are centralized
 - **Self-Documenting**: Comprehensive help system provides detailed guidance for all operations
