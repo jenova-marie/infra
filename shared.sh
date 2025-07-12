@@ -1147,7 +1147,7 @@ empty_volumes_files() {
     done
     
     # Summary
-    info_message "📊 Volumes cleanup summary:"
+    info_message "✅ Volumes cleanup summary:"
     info_message "   Processed: $processed_count/${#modules_to_process[@]} modules"
     
     if [[ $error_count -gt 0 ]]; then

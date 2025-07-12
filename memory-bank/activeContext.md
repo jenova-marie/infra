@@ -1,5 +1,17 @@
 # Active Context
 
+## Code Changes (2025-07-12 04:08:02)
+
+### Added Files
+- .cursor/mcp.json
+
+
+## Code Changes (2025-07-12 00:31:12)
+
+### Added Files
+- .cursor/mcp.json
+
+
 ## Code Changes (2025-07-12 00:11:38)
 
 ### Added Files

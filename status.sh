@@ -749,7 +749,7 @@ check_ebs_detailed_status() {
     
     # Summary with pretty colors
     echo ""
-    print_detailed_section_header "📊" "EBS Summary" "$WHITE"
+    print_detailed_section_header "✅" "EBS Summary" "$WHITE"
     print_colored_info "      Total Volumes" "$volume_count" "$GREEN"
     print_colored_info "      Online Volumes" "$online_volumes" "$GREEN"
     print_colored_info "      Total Storage" "${total_size}GB" "$GREEN"
@@ -873,7 +873,7 @@ check_eip_detailed_status() {
     done < <(echo "$eip_addresses")
     
     # Summary
-    info_message "   📊 EIP Summary:"
+    info_message "   ✅ EIP Summary:"
     info_message "      Total EIPs: $eip_count"
     info_message "      Allocated: $allocated_eips"
     info_message "      Associated: $associated_eips"
@@ -995,7 +995,7 @@ check_ecr_detailed_status() {
     done < <(echo "$repo_names")
     
     # Summary
-    info_message "   📊 ECR Summary:"
+    info_message "   ✅ ECR Summary:"
     info_message "      Total Repositories: $repo_count"
     info_message "      Active Repositories: $active_repos"
     info_message "      Total Images: $total_images"
@@ -1151,7 +1151,7 @@ check_vpc_detailed_status() {
     done < <(echo "$vpc_ids")
     
     # Summary
-    info_message "   📊 VPC Summary:"
+    info_message "   ✅ VPC Summary:"
     info_message "      Total VPCs: $vpc_count"
     info_message "      Available VPCs: $available_vpcs"
     
@@ -1273,7 +1273,7 @@ check_sg_detailed_status() {
     done < <(echo "$sg_ids")
     
     # Summary
-    info_message "   📊 Security Group Summary:"
+    info_message "   ✅ Security Group Summary:"
     info_message "      Total Security Groups: $sg_count"
     info_message "      Active Security Groups: $active_sgs"
     

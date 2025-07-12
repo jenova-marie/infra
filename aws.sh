@@ -487,7 +487,7 @@ wait_for_instance_state() {
                 print_message "🔴 $operation_desc status: $current_state (${elapsed}s elapsed)" "$RED" "ERROR"
                 ;;
             *)
-                info_message "📊 $operation_desc status: $current_state (${elapsed}s elapsed)"
+                info_message "✅ $operation_desc status: $current_state (${elapsed}s elapsed)"
                 ;;
         esac
         

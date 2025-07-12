@@ -312,7 +312,7 @@ print_summary_box() {
 # Usage: generate_verification_report
 generate_verification_report() {
     info_message "═══════════════════════════════════════════════════════════════════════════"
-    info_message "📊 COMPREHENSIVE VERIFICATION REPORT"
+    info_message "✅ COMPREHENSIVE VERIFICATION REPORT"
     info_message "═══════════════════════════════════════════════════════════════════════════"
     info_message "Total Checks: $VERIFICATION_TOTAL_CHECKS"
     info_message "✅ Passed: $VERIFICATION_PASSED_CHECKS"

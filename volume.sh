@@ -776,30 +776,24 @@ is_volume_attached_fast() {
 # Output Refresh
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Simple output refresh for instance
+# Simple output refresh for instance using DRY approach
 # Usage: refresh_instance_outputs "dev" "athena"
 refresh_instance_outputs() {
     local env="$1"
     local instance="$2"
     
-    debug_message "Refreshing outputs for $instance using direct terragrunt approach"
+    debug_message "Refreshing outputs for $instance using existing output.sh function"
     
-    # Get the module path
+    # Get the module path and change to environment directory
     local env_path="$(get_environment_path "$env")"
-    local instance_path="$env_path/$instance"
-    
-    # Change to instance directory and run terragrunt output directly
     local original_dir=$(pwd)
-    if cd "$instance_path"; then
-        debug_message "Changed to directory: $instance_path"
+    
+    if cd "$env_path"; then
+        debug_message "Changed to environment directory: $env_path"
         
-        # Run terragrunt output --json directly
-        if terragrunt output --json > output.json 2>/dev/null; then
-            debug_message "Outputs refreshed successfully for $instance"
-            
-            # Use existing centralized copy function from output.sh
-            move_module_outputs_to_centralized "$instance" "$env"
-            
+        # Use existing generate_module_outputs function from output.sh (DRY/KISS)
+        if generate_module_outputs "$instance"; then
+            debug_message "Outputs refreshed successfully for $instance using output.sh"
             cd "$original_dir"
             return 0
         else
@@ -808,7 +802,7 @@ refresh_instance_outputs() {
             return 1
         fi
     else
-        debug_message "Failed to change to directory: $instance_path"
+        debug_message "Failed to change to environment directory: $env_path"
         return 1
     fi
 } 
