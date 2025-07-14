@@ -1,8 +1,8 @@
 # Infrastructure Management System v2.0
 
-**Last Updated:** January 14, 2025 at 10:30 AM CST
+**Last Updated:** January 14, 2025 at 5:30 PM CST
 
-**Version:** 2.0.24  
+**Version:** 2.0.26  
 **Purpose:** Simplified, reliable infrastructure orchestration for Terraform/Terragrunt with DRY AWS CLI integration
 
 ---
@@ -20,6 +20,52 @@ This system follows a **"simplicity first"** approach with these core principles
 - **Consistent Environment Context**: All operations execute from the correct environment directory
 - **Modular Shared Code**: Common operations (parsing, formatting, validation) are centralized
 - **Self-Documenting**: Comprehensive help system provides detailed guidance for all operations
+- **Endpoint Flag Intelligence**: Endpoint flags (`--ssm`, `--ecr`, `--s3`) work seamlessly with all targeting methods
+
+---
+
+## 🚀 **Enhanced Endpoint Flag Support**
+
+### **Intelligent Endpoint Flag Detection**
+
+The system now intelligently detects when the endpoints module is included in any operation and automatically sets the appropriate environment variables. This means endpoint flags work consistently across all targeting methods:
+
+#### **All Targeting Methods Now Supported**
+
+```bash
+# Group operations (NEW - now works!)
+./infra apply dev --ssm --ecr                    # All modules with endpoint flags
+./infra apply dev:infrastructure --ssm           # Infrastructure group with SSM
+./infra apply dev:all --ssm --ecr --s3           # All modules with all endpoint flags
+
+# Direct targeting (always worked)
+./infra apply dev:endpoints --ssm --ecr          # Direct endpoint targeting
+
+# Non-endpoint operations (correctly ignored)
+./infra apply dev:athena --ssm                   # Flags ignored (no endpoints module)
+./infra apply dev:instances --ssm                # Flags ignored (instances only)
+```
+
+#### **How It Works**
+
+The system uses **intelligent endpoint detection** to determine when to set environment variables:
+
+1. **Direct Targeting**: `dev:endpoints` → Always sets endpoint flags
+2. **Group Operations**: `dev`, `dev:all`, `dev:infrastructure` → Sets flags if endpoints is in the group
+3. **Non-Endpoint Operations**: `dev:instances`, `dev:athena` → Skips flag setting
+
+#### **Environment Variable Flow**
+
+```bash
+# Flag parsing
+--ssm --ecr → SSM=true, ECR=true, S3=false
+
+# Environment variable export (when endpoints included)
+TG_VAR_ssm=true, TG_VAR_ecr=true, TG_VAR_s3=false
+
+# Terragrunt configuration uses these variables
+# to conditionally create VPC endpoints
+```
 
 ---
 

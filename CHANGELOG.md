@@ -6,6 +6,144 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.26] - 2025-01-14 - Critical Fix: Endpoint Flags Now Work with Group Operations 🚀✨
+
+### 🎯 **Critical Fix: --ssm and --ecr Flags Now Work with Group Apply Operations**
+
+#### **Problem Solved**
+- **Group operations failing**: `infra apply dev --ssm --ecr` was not applying endpoint flags to the endpoints module
+- **Flags ignored**: `--ssm`, `--ecr`, and `--s3` flags were only working for direct endpoint targeting (`dev:endpoints`)
+- **Environment variables not set**: `TG_VAR_ssm`, `TG_VAR_ecr`, and `TG_VAR_s3` were not being exported for group operations
+
+#### **Root Cause Analysis**
+```bash
+# What was happening (BROKEN):
+./infra apply dev --ssm --ecr
+# → TARGET_TYPE="all" (not "endpoints")  
+# → execute_terragrunt() only set env vars when target_type == "endpoints"
+# → TG_VAR_ssm and TG_VAR_ecr never set
+# → Endpoints module deployed without flags
+
+# What works now (FIXED):
+./infra apply dev --ssm --ecr
+# → TARGET_TYPE="all" 
+# → execute_terragrunt() detects endpoints in infrastructure group
+# → Sets TG_VAR_ssm=true, TG_VAR_ecr=true
+# → Endpoints module deployed with correct flags
+```
+
+#### **Technical Implementation**
+
+**Enhanced Logic in `execute_terragrunt()`:**
+- **Before**: Only set environment variables when `target_type == "endpoints"`
+- **After**: Set environment variables when endpoints module is **included** in the operation
+
+**Target Type Detection:**
+```bash
+# Direct targeting
+./infra apply dev:endpoints --ssm        # endpoints_included=true
+
+# Group operations  
+./infra apply dev --ssm                  # endpoints_included=true (part of infrastructure)
+./infra apply dev:infrastructure --ssm   # endpoints_included=true (part of infrastructure)
+./infra apply dev:all --ssm --ecr        # endpoints_included=true (part of all)
+
+# Non-endpoint operations
+./infra apply dev:athena --ssm           # endpoints_included=false (single instance)
+./infra apply dev:instances --ssm        # endpoints_included=false (instances only)
+```
+
+#### **Files Modified**
+- **[`infra/shared.sh`](./shared.sh)**: Enhanced `execute_terragrunt()` function with intelligent endpoint detection
+- **[`infra/output.sh`](./output.sh)**: Updated output generation functions for consistency
+
+#### **Benefits**
+- ✅ **Group operations now work**: `infra apply dev --ssm --ecr` properly applies endpoint flags
+- ✅ **Consistent behavior**: All targeting methods now handle endpoint flags correctly
+- ✅ **Backward compatible**: Existing `dev:endpoints` targeting still works
+- ✅ **DRY principle**: Single logic handles all targeting scenarios
+
+#### **Usage Examples**
+```bash
+# All of these now work correctly:
+./infra apply dev --ssm --ecr                    # Group operation with endpoint flags
+./infra apply dev:infrastructure --ssm           # Infrastructure group with SSM
+./infra apply dev:all --ssm --ecr --s3           # All modules with all endpoint flags
+./infra apply dev:endpoints --ssm --ecr          # Direct targeting (still works)
+```
+
+---
+
+## [2.0.25] - 2025-01-14 - S3 VPC Endpoint Support Implementation 🔗✨
+
+### 🚀 **New Feature: S3 VPC Endpoint Support via --s3 Flag**
+
+#### **Enhancement Overview**
+- **Complete S3 endpoint support**: Implemented full `--s3` flag functionality for VPC endpoint deployment
+- **Unified flag system**: S3 endpoints now follow the same pattern as `--ssm` and `--ecr` flags
+- **Smart filtering**: S3 endpoints are conditionally created based on the `--s3` flag state
+
+#### **Implementation Details**
+
+**Modified Files:**
+- [`infra/args.sh`](./args.sh) - Added S3 flag parsing, initialization, and help documentation
+- [`infra/shared.sh`](./shared.sh) - Added TG_VAR_s3 environment variable support
+- [`infra/output.sh`](./output.sh) - Added S3 flag support for output generation
+- [`../recoverysky-iac/src/live/_base/endpoints/terragrunt.hcl`](../recoverysky-iac/src/live/_base/endpoints/terragrunt.hcl) - Added s3_enabled variable and filtering logic
+- [`../recoverysky-iac/src/live/dev/endpoints/condition_vars.yml`](../recoverysky-iac/src/live/dev/endpoints/condition_vars.yml) - Added s3 condition variable
+
+**Technical Implementation:**
+```bash
+# S3 flag usage examples
+./infra apply dev:endpoints --s3                    # Deploy S3 VPC endpoint only
+./infra apply dev:endpoints --ssm --s3              # Deploy SSM + S3 endpoints  
+./infra apply dev:endpoints --ssm --ecr --s3        # Deploy all endpoint types
+
+# Environment variable flow
+--s3 flag → S3=true → TG_VAR_s3=true → s3_enabled=true → endpoint created
+```
+
+**Endpoint Configuration:**
+```hcl
+# S3 endpoint definition in endpoints.hcl
+{
+  name           = "s3"
+  subnet         = "endpoint"  
+  security_group = "endpoint"
+  service_name   = "com.amazonaws.us-east-1.s3"
+  condition      = "s3"
+}
+```
+
+#### **Key Features**
+- ✅ **Flag Integration**: `--s3` flag fully integrated into infra CLI
+- ✅ **Conditional Deployment**: S3 endpoints only deploy when `--s3` flag is specified
+- ✅ **Environment Variables**: Proper TG_VAR_s3 variable passing to Terragrunt
+- ✅ **Documentation**: Complete help text and usage examples
+- ✅ **Output Support**: S3 flag respected during output generation
+- ✅ **Consistency**: Follows same patterns as existing SSM/ECR flags
+
+#### **Usage Examples**
+```bash
+# Basic S3 endpoint deployment
+./infra apply dev:endpoints --s3
+
+# Combined with other endpoints
+./infra apply dev:endpoints --ssm --ecr --s3
+
+# Production deployment with S3
+./infra apply prod:endpoints --s3 --backup
+```
+
+#### **Benefits**
+- 🔗 **S3 VPC Connectivity**: Enables secure S3 access without internet gateway
+- 🛡️ **Security**: Keeps S3 traffic within VPC boundaries  
+- ⚡ **Performance**: Reduced latency for S3 operations
+- 💰 **Cost Optimization**: Eliminates NAT gateway costs for S3 traffic
+- 🎯 **Selective Deployment**: Only deploy S3 endpoints when needed
+
+---
+
 ## [2.0.24] - 2025-01-14 - Critical Fix: Protected Module Output Files Preserved During Destroy 🛡️✨
 
 ### 🎯 **Critical Fix: Protected Module Output Files Now Preserved During Infrastructure Destroy**

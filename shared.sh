@@ -621,8 +621,46 @@ execute_terragrunt() {
         debug_message "Added no-color flag"
     fi
     
-    # Add endpoint flag variables for endpoints module
-    if [[ "$target_type" == "endpoints" ]]; then
+    # CRITICAL FIX: Set endpoint flag environment variables when endpoints module is included
+    # Check if endpoints module will be processed by this operation
+    local endpoints_included=false
+    
+    # Determine if endpoints module is included based on target type
+    case "$target_type" in
+        "endpoints")
+            # Direct endpoints targeting
+            endpoints_included=true
+            debug_message "Endpoints module targeted directly"
+            ;;
+        "all"|"infrastructure")
+            # Check if endpoints is part of infrastructure group and not excluded
+            if is_modules_loaded; then
+                # Check if endpoints is in infrastructure modules
+                local infrastructure_modules=()
+                while IFS= read -r module; do
+                    [[ -n "$module" ]] && infrastructure_modules+=("$module")
+                done < <(get_infrastructure_modules)
+                
+                # Check if endpoints is in the infrastructure list
+                for module in "${infrastructure_modules[@]}"; do
+                    if [[ "$module" == "endpoints" ]]; then
+                        endpoints_included=true
+                        debug_message "Endpoints module found in infrastructure group"
+                        break
+                    fi
+                done
+            fi
+            ;;
+        *)
+            # Single module targeting - not endpoints
+            debug_message "Single module targeting - endpoints not included"
+            ;;
+    esac
+    
+    # Set endpoint flag environment variables if endpoints module is included
+    if [[ "$endpoints_included" == true ]]; then
+        debug_message "Setting endpoint flag environment variables for endpoints module"
+        
         # Set environment variables that terragrunt can access
         if is_ssm; then
             export TG_VAR_ssm=true
@@ -638,6 +676,8 @@ execute_terragrunt() {
             export TG_VAR_ecr=false
             debug_message "Set environment variable: TG_VAR_ecr=false"
         fi
+    else
+        debug_message "Endpoints module not included - skipping endpoint flag environment variables"
     fi
     
     # Append exclusion flags if provided

@@ -58,7 +58,7 @@ generate_module_outputs() {
     # Build terragrunt output command with endpoint flags if needed
     local output_command="terragrunt output --json"
     
-    # Add endpoint flags for endpoints module (same logic as execute_terragrunt)
+    # Set environment variables for endpoint module if needed
     if [[ "$module" == "endpoints" ]]; then
         # Set environment variables that terragrunt can access
         if is_ssm; then
