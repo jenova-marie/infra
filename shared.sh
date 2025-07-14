@@ -621,6 +621,25 @@ execute_terragrunt() {
         debug_message "Added no-color flag"
     fi
     
+    # Add endpoint flag variables for endpoints module
+    if [[ "$target_type" == "endpoints" ]]; then
+        # Set environment variables that terragrunt can access
+        if is_ssm; then
+            export TG_VAR_ssm=true
+            debug_message "Set environment variable: TG_VAR_ssm=true"
+        else
+            export TG_VAR_ssm=false
+            debug_message "Set environment variable: TG_VAR_ssm=false"
+        fi
+        if is_ecr; then
+            export TG_VAR_ecr=true
+            debug_message "Set environment variable: TG_VAR_ecr=true"
+        else
+            export TG_VAR_ecr=false
+            debug_message "Set environment variable: TG_VAR_ecr=false"
+        fi
+    fi
+    
     # Append exclusion flags if provided
     if [[ -n "$command_args" ]]; then
         # Convert our custom format to proper terragrunt flags

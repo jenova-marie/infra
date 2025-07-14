@@ -55,10 +55,32 @@ generate_module_outputs() {
     local output_file="output.json"
     local success=true
     
-    debug_message "Generating outputs: terragrunt output --json > $output_file"
+    # Build terragrunt output command with endpoint flags if needed
+    local output_command="terragrunt output --json"
+    
+    # Add endpoint flags for endpoints module (same logic as execute_terragrunt)
+    if [[ "$module" == "endpoints" ]]; then
+        # Set environment variables that terragrunt can access
+        if is_ssm; then
+            export TG_VAR_ssm=true
+            debug_message "Set environment variable for output: TG_VAR_ssm=true"
+        else
+            export TG_VAR_ssm=false
+            debug_message "Set environment variable for output: TG_VAR_ssm=false"
+        fi
+        if is_ecr; then
+            export TG_VAR_ecr=true
+            debug_message "Set environment variable for output: TG_VAR_ecr=true"
+        else
+            export TG_VAR_ecr=false
+            debug_message "Set environment variable for output: TG_VAR_ecr=false"
+        fi
+    fi
+    
+    debug_message "Generating outputs: $output_command > $output_file"
         
     # Use simple redirect - terragrunt sends JSON to stdout and logs to stderr
-    if terragrunt output --json > "$output_file" 2>/dev/null; then
+    if $output_command > "$output_file" 2>/dev/null; then
         # Check if the output file was created and has content (using KISS utility)
         if file_exists_and_has_content "$output_file"; then
             debug_message "Outputs generated successfully for module: $module"
@@ -135,10 +157,32 @@ generate_module_outputs_bg() {
     local output_file="output.json"
     local success=true
     
-    debug_message "Generating outputs (background): terragrunt output --json > $output_file"
+    # Build terragrunt output command with endpoint flags if needed
+    local output_command="terragrunt output --json"
+    
+    # Add endpoint flags for endpoints module (same logic as execute_terragrunt)
+    if [[ "$module" == "endpoints" ]]; then
+        # Set environment variables that terragrunt can access
+        if is_ssm; then
+            export TG_VAR_ssm=true
+            debug_message "Set environment variable for output: TG_VAR_ssm=true"
+        else
+            export TG_VAR_ssm=false
+            debug_message "Set environment variable for output: TG_VAR_ssm=false"
+        fi
+        if is_ecr; then
+            export TG_VAR_ecr=true
+            debug_message "Set environment variable for output: TG_VAR_ecr=true"
+        else
+            export TG_VAR_ecr=false
+            debug_message "Set environment variable for output: TG_VAR_ecr=false"
+        fi
+    fi
+    
+    debug_message "Generating outputs (background): $output_command > $output_file"
         
     # Use simple redirect - terragrunt sends JSON to stdout and logs to stderr
-    if terragrunt output --json > "$output_file" 2>/dev/null; then
+    if $output_command > "$output_file" 2>/dev/null; then
         # Check if the output file was created and has content (using KISS utility)
         if file_exists_and_has_content "$output_file"; then
             debug_message "Outputs generated successfully for module (background): $module"

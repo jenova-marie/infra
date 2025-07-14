@@ -45,6 +45,10 @@ CLEAN=false
 AWS_REGION=""
 TEST_MODE=false
 
+# Endpoint flags
+SSM=false
+ECR=false
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Argument Parsing Functions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -199,6 +203,16 @@ parse_standard_operation_args() {
             "--test-mode")
                 TEST_MODE=true
                 debug_message "Test mode enabled - errors will return instead of exit"
+                shift
+                ;;
+            "--ssm")
+                SSM=true
+                debug_message "SSM endpoint flag enabled"
+                shift
+                ;;
+            "--ecr")
+                ECR=true
+                debug_message "ECR endpoint flag enabled"
                 shift
                 ;;
             *)
@@ -918,6 +932,18 @@ is_no_volumes() {
     [[ "$NO_VOLUMES" == true ]]
 }
 
+# Check if SSM endpoint flag is enabled
+# Usage: is_ssm
+is_ssm() {
+    [[ "$SSM" == true ]]
+}
+
+# Check if ECR endpoint flag is enabled
+# Usage: is_ecr
+is_ecr() {
+    [[ "$ECR" == true ]]
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Help and Usage Functions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1392,6 +1418,16 @@ FLAGS:
                        • Useful for testing and automation
                        • Errors return exit codes instead of exiting
   
+  --ssm                Enable SSM-related endpoints
+                       • Enables SSM, SSM Messages, EC2 Messages, and Secrets Manager endpoints
+                       • Only affects endpoints module deployment
+                       • Use when instances need Systems Manager access
+  
+  --ecr                Enable ECR-related endpoints
+                       • Enables ECR endpoint for container registry access
+                       • Only affects endpoints module deployment
+                       • Use when instances need to pull/push container images
+  
   --region <aws-region> Manually specify AWS region
                        • Override automatic region detection
                        • Format: us-west-2, us-east-1, etc.
@@ -1409,6 +1445,11 @@ EXAMPLES:
   # Testing and validation
   ./infra apply dev:athena --dry-run --verbose 1
   ./infra apply dev:all --no-volumes
+  
+  # Endpoint-specific deployments
+  ./infra apply dev:endpoints --ssm
+  ./infra apply dev:endpoints --ecr
+  ./infra apply dev:endpoints --ssm --ecr
   
   # With notifications and DNS
   ./infra apply dev:infrastructure --bell --dns
@@ -2304,6 +2345,16 @@ FLAGS:
   --test-mode          Enable test mode (errors return instead of exit)
                          • Useful for testing and automation
                          • Errors return exit codes instead of exiting
+  
+  --ssm                Enable SSM-related endpoints
+                         • Enables SSM, SSM Messages, EC2 Messages, and Secrets Manager endpoints
+                         • Only affects endpoints module deployment
+                         • Use when instances need Systems Manager access
+  
+  --ecr                Enable ECR-related endpoints
+                         • Enables ECR endpoint for container registry access
+                         • Only affects endpoints module deployment
+                         • Use when instances need to pull/push container images
   
   --region <aws-region> Manually specify AWS region
                          • Override automatic region detection
