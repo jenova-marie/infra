@@ -290,6 +290,12 @@ get_module_type() {
 is_instance_gateway() {
     local instance="$1"
     local gw
+    
+    # Safe array access - handle empty arrays
+    if [[ ${#GATEWAY_INSTANCES[@]} -eq 0 ]]; then
+        return 1
+    fi
+    
     for gw in "${GATEWAY_INSTANCES[@]}"; do
         if [[ "$gw" == "$instance" ]]; then
             return 0

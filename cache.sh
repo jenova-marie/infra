@@ -26,15 +26,19 @@ execute_clean_operation() {
     # KISS: Always clean global environment files (outputs/, logs/, .terraform*)
     info_message "🧹 Cleaning global environment files for: $OP_ENV"
     
-    # Remove global environment folders
+    # Remove global environment folders and terraform state files
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would remove: $env_path/log/"
         dry_run_message "[DRY-RUN] Would remove: $env_path/outputs/"
         dry_run_message "[DRY-RUN] Would remove: $env_path/.terraform*"
+        [[ -f "$env_path/terraform.tfstate" ]] && dry_run_message "[DRY-RUN] Would remove: $env_path/terraform.tfstate"
+        [[ -f "$env_path/terraform.tfstate.backup" ]] && dry_run_message "[DRY-RUN] Would remove: $env_path/terraform.tfstate.backup"
     else
         rm -rf "$env_path/log" 2>/dev/null || true
         rm -rf "$env_path/outputs" 2>/dev/null || true
         rm -rf "$env_path"/.terraform* 2>/dev/null || true
+        rm -f "$env_path/terraform.tfstate" 2>/dev/null || true
+        rm -f "$env_path/terraform.tfstate.backup" 2>/dev/null || true
         info_message "✅ Cleaned global environment files"
     fi
     
@@ -97,6 +101,8 @@ clean_module_files() {
         [[ -f "output.json" ]] && dry_run_message "[DRY-RUN]   output.json"
         [[ -d ".terraform" ]] && dry_run_message "[DRY-RUN]   .terraform/"
         [[ -f ".terraform.lock.hcl" ]] && dry_run_message "[DRY-RUN]   .terraform.lock.hcl"
+        [[ -f "terraform.tfstate" ]] && dry_run_message "[DRY-RUN]   terraform.tfstate"
+        [[ -f "terraform.tfstate.backup" ]] && dry_run_message "[DRY-RUN]   terraform.tfstate.backup"
     else
         local removed_items=()
         
@@ -130,6 +136,23 @@ clean_module_files() {
         if [[ -f ".terraform.lock.hcl" ]]; then
             if rm -f .terraform.lock.hcl 2>/dev/null; then
                 removed_items+=(".terraform.lock.hcl")
+            else
+                success=false
+            fi
+        fi
+        
+        # Remove terraform.tfstate files (local state files)
+        if [[ -f "terraform.tfstate" ]]; then
+            if rm -f terraform.tfstate 2>/dev/null; then
+                removed_items+=("terraform.tfstate")
+            else
+                success=false
+            fi
+        fi
+        
+        if [[ -f "terraform.tfstate.backup" ]]; then
+            if rm -f terraform.tfstate.backup 2>/dev/null; then
+                removed_items+=("terraform.tfstate.backup")
             else
                 success=false
             fi

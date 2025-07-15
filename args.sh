@@ -1042,13 +1042,13 @@ OUTPUT - Generate Terraform outputs
 CLEAN - Remove Terragrunt cache
   Usage: ./infra clean <target> [flags]
   
-  Purpose: Removes .terragrunt-cache directories to force re-initialization
+  Purpose: Removes .terragrunt-cache directories and terraform state files to force re-initialization
   Examples:
-    ./infra clean dev:all                  # Clean all module caches
-    ./infra clean dev:infrastructure       # Clean infrastructure caches
-    ./infra clean dev:athena               # Clean single module cache
+    ./infra clean dev:all                  # Clean all module caches and state files
+    ./infra clean dev:infrastructure       # Clean infrastructure caches and state files
+    ./infra clean dev:athena               # Clean single module cache and state files
   
-  When to use: Cache corruption, provider issues, debugging
+  When to use: Cache corruption, provider issues, debugging, state file cleanup
 
 ═══════════════════════════════════════════════════════════════════════════
 💾 VOLUME MANAGEMENT
@@ -1832,11 +1832,14 @@ WHAT GETS CLEANED (Module Level):
   • output.json           - Generated output files
   • .terraform/           - Terraform state and provider cache  
   • .terraform.lock.hcl   - Terraform dependency lock files
+  • terraform.tfstate     - Local terraform state files
+  • terraform.tfstate.backup - Local terraform state backup files
 
 WHAT GETS CLEANED (Environment Level - only with 'all' target):
   • <env>/log/            - All operation logs
   • <env>/outputs/        - All consolidated outputs
   • <env>/.terraform*     - Environment-level terraform files
+  • <env>/terraform.tfstate* - Environment-level terraform state files
 
 TARGET-BASED CLEANING:
   dev:all                 Clean EVERYTHING in dev environment
