@@ -1,0 +1,8 @@
+infrastructure:
+  - name: vpcs
+  - name: security_groups
+  - name: test_module
+ 
+instances:
+  - name: test_instance
+  - name: another_instance 
