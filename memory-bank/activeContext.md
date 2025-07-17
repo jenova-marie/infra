@@ -1,5 +1,28 @@
 # Active Context
 
+## Code Changes (2025-07-17 00:20:18)
+
+### Added Files
+- .cursor/mcp.json
+- bats-core-1.12.0/.devcontainer/devcontainer.json
+- bats-core-1.12.0/.github/dependabot.yml
+- bats-core-1.12.0/.github/workflows/codespell.yml
+- bats-core-1.12.0/.github/workflows/dependency-review.yml
+- bats-core-1.12.0/.github/workflows/release.yml
+- bats-core-1.12.0/.github/workflows/release_dockerhub.yml
+- bats-core-1.12.0/.github/workflows/scorecard.yml
+- bats-core-1.12.0/.github/workflows/tests.yml
+- bats-core-1.12.0/.pre-commit-config.yaml
+- bats-core-1.12.0/.readthedocs.yml
+- bats-core-1.12.0/docker-compose.yml
+- bats-core-1.12.0/docs/.markdownlint.json
+- bats-core-1.12.0/docs/list-links.py
+- bats-core-1.12.0/docs/source/conf.py
+- bats-core-1.12.0/package.json
+- tests/fixtures/modules.yml
+- tests/src/live/test/modules.yml
+
+
 ## Code Changes (2025-07-14 04:31:03)
 
 ### Added Files
