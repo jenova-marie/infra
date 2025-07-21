@@ -48,6 +48,10 @@ TEST_MODE=false
 # Endpoint flags
 SSM=false
 ECR=false
+S3=false
+
+# Gateway flags
+VPCS=false
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Argument Parsing Functions
@@ -215,6 +219,16 @@ parse_standard_operation_args() {
                 debug_message "ECR endpoint flag enabled"
                 shift
                 ;;
+            "--s3")
+                S3=true
+                debug_message "S3 endpoint flag enabled"
+                shift
+                ;;
+            "--vpcs")
+                VPCS=true
+                debug_message "VPCs gateway flag enabled - will apply VPCs after gateway operations"
+                shift
+                ;;
             *)
                 handle_error "Unknown flag for $ACTION operation: $1"
                 return 1
@@ -328,6 +342,11 @@ parse_volume_operation_args() {
                 debug_message "Test mode enabled - errors will return instead of exit"
                 shift
                 ;;
+            "--vpcs")
+                VPCS=true
+                debug_message "VPCs gateway flag enabled - will apply VPCs after gateway operations"
+                shift
+                ;;
             *)
                 handle_error "Unknown flag for volume operation: $1"
                 return 1
@@ -439,6 +458,11 @@ parse_shutdown_operation_args() {
                 debug_message "Test mode enabled - errors will return instead of exit"
                 shift
                 ;;
+            "--vpcs")
+                VPCS=true
+                debug_message "VPCs gateway flag enabled - will apply VPCs after gateway operations"
+                shift
+                ;;
             *)
                 handle_error "Unknown flag for shutdown operation: $1"
                 return 1
@@ -513,6 +537,11 @@ parse_reboot_operation_args() {
             "--test-mode")
                 TEST_MODE=true
                 debug_message "Test mode enabled - errors will return instead of exit"
+                shift
+                ;;
+            "--vpcs")
+                VPCS=true
+                debug_message "VPCs gateway flag enabled - will apply VPCs after gateway operations"
                 shift
                 ;;
             *)
@@ -942,6 +971,18 @@ is_ssm() {
 # Usage: is_ecr
 is_ecr() {
     [[ "$ECR" == true ]]
+}
+
+# Check if S3 endpoint flag is enabled
+# Usage: is_s3
+is_s3() {
+    [[ "$S3" == true ]]
+}
+
+# Check if VPCs gateway flag is enabled
+# Usage: is_vpcs
+is_vpcs() {
+    [[ "$VPCS" == true ]]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1427,6 +1468,16 @@ FLAGS:
                        • Enables ECR endpoint for container registry access
                        • Only affects endpoints module deployment
                        • Use when instances need to pull/push container images
+  
+  --s3                 Enable S3-related endpoints
+                       • Enables S3 endpoint for object storage access
+                       • Only affects endpoints module deployment
+                       • Use when instances need S3 access without internet
+  
+  --vpcs               Enable VPCs reapplication after gateway operations
+                       • Automatically applies VPCs module after gateway instance changes
+                       • Only triggers for instances marked with 'gateway: true' in modules.yml
+                       • Ensures routing tables stay synchronized with gateway NICs
   
   --region <aws-region> Manually specify AWS region
                        • Override automatic region detection

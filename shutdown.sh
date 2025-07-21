@@ -146,11 +146,16 @@ execute_bounce_sequence() {
             load_modules "$env"
             if get_module_type "$target_type" 2>/dev/null | grep -q "instance"; then
                 if is_instance_gateway "$target_type"; then
-                    info_message "🚦 Gateway instance '$target_type' bounced; reapplying VPCs to sync routes."
-                    if ! execute_standard_operation_with_params "apply" "$env" "vpcs"; then
-                        error_message "❌ Failed to reapply VPCs after gateway instance bounce."
+                    # Only apply VPCs if --vpcs flag is enabled
+                    if is_vpcs; then
+                        info_message "🚦 Gateway instance '$target_type' bounced; reapplying VPCs to sync routes."
+                        if ! execute_standard_operation_with_params "apply" "$env" "vpcs"; then
+                            error_message "❌ Failed to reapply VPCs after gateway instance bounce."
+                        else
+                            success_message "✅ VPCs reapplied after gateway instance bounce."
+                        fi
                     else
-                        success_message "✅ VPCs reapplied after gateway instance bounce."
+                        debug_message "Gateway instance '$target_type' bounced, but --vpcs flag not enabled - skipping VPCs apply"
                     fi
                 fi
             fi

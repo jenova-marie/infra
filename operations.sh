@@ -146,12 +146,17 @@ execute_standard_operation() {
             # Check if the target is an instance and a gateway
             if get_module_type "$OP_TARGET_TYPE" 2>/dev/null | grep -q "instance"; then
                 if is_instance_gateway "$OP_TARGET_TYPE"; then
-                    info_message "🚦 Gateway instance '$OP_TARGET_TYPE' modified; reapplying VPCs to sync routes."
-                    # Call VPCs apply (idempotent)
-                    if ! execute_standard_operation_with_params "$OP_ACTION" "$OP_ENV" "vpcs"; then
-                        error_message "❌ Failed to reapply VPCs after gateway instance modification."
+                    # Only apply VPCs if --vpcs flag is enabled
+                    if is_vpcs; then
+                        info_message "🚦 Gateway instance '$OP_TARGET_TYPE' modified; reapplying VPCs to sync routes."
+                        # Always apply VPCs (not destroy) to update routing tables
+                        if ! execute_standard_operation_with_params "apply" "$OP_ENV" "vpcs"; then
+                            error_message "❌ Failed to reapply VPCs after gateway instance modification."
+                        else
+                            success_message "✅ VPCs reapplied after gateway instance modification."
+                        fi
                     else
-                        success_message "✅ VPCs reapplied after gateway instance modification."
+                        debug_message "Gateway instance '$OP_TARGET_TYPE' modified, but --vpcs flag not enabled - skipping VPCs apply"
                     fi
                 fi
             fi
