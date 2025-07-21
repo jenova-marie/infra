@@ -29,13 +29,13 @@ execute_clean_operation() {
     # Remove global environment folders and terraform state files
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would remove: $env_path/log/"
-        dry_run_message "[DRY-RUN] Would remove: $env_path/outputs/"
+        is_outputs && dry_run_message "[DRY-RUN] Would remove: $env_path/outputs/"
         dry_run_message "[DRY-RUN] Would remove: $env_path/.terraform*"
         [[ -f "$env_path/terraform.tfstate" ]] && dry_run_message "[DRY-RUN] Would remove: $env_path/terraform.tfstate"
         [[ -f "$env_path/terraform.tfstate.backup" ]] && dry_run_message "[DRY-RUN] Would remove: $env_path/terraform.tfstate.backup"
     else
         rm -rf "$env_path/log" 2>/dev/null || true
-        rm -rf "$env_path/outputs" 2>/dev/null || true
+        is_outputs && rm -rf "$env_path/outputs" 2>/dev/null || true
         rm -rf "$env_path"/.terraform* 2>/dev/null || true
         rm -f "$env_path/terraform.tfstate" 2>/dev/null || true
         rm -f "$env_path/terraform.tfstate.backup" 2>/dev/null || true
@@ -98,7 +98,7 @@ clean_module_files() {
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would remove in $module:"
         [[ -d ".terragrunt-cache" ]] && dry_run_message "[DRY-RUN]   .terragrunt-cache/"
-        [[ -f "output.json" ]] && dry_run_message "[DRY-RUN]   output.json"
+        is_outputs && [[ -f "output.json" ]] && dry_run_message "[DRY-RUN]   output.json"
         [[ -d ".terraform" ]] && dry_run_message "[DRY-RUN]   .terraform/"
         [[ -f ".terraform.lock.hcl" ]] && dry_run_message "[DRY-RUN]   .terraform.lock.hcl"
         [[ -f "terraform.tfstate" ]] && dry_run_message "[DRY-RUN]   terraform.tfstate"
@@ -116,7 +116,7 @@ clean_module_files() {
         fi
         
         # Remove output.json files (handle both symlinks and actual files)
-        if [[ -f "output.json" ]]; then
+        if is_outputs && [[ -f "output.json" ]]; then
             if rm -f output.json 2>/dev/null; then
                 removed_items+=("output.json")
             else

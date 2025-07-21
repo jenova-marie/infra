@@ -53,6 +53,9 @@ S3=false
 # Gateway flags
 VPCS=false
 
+# Clean operation flags
+OUTPUTS=false
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Argument Parsing Functions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -227,6 +230,11 @@ parse_standard_operation_args() {
             "--vpcs")
                 VPCS=true
                 debug_message "VPCs gateway flag enabled - will apply VPCs after gateway operations"
+                shift
+                ;;
+            "--outputs")
+                OUTPUTS=true
+                debug_message "Outputs removal flag enabled - will remove output files during clean operations"
                 shift
                 ;;
             *)
@@ -985,6 +993,12 @@ is_vpcs() {
     [[ "$VPCS" == true ]]
 }
 
+# Check if outputs removal flag is enabled
+# Usage: is_outputs
+is_outputs() {
+    [[ "$OUTPUTS" == true ]]
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Help and Usage Functions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1088,8 +1102,10 @@ CLEAN - Remove Terragrunt cache
     ./infra clean dev:all                  # Clean all module caches and state files
     ./infra clean dev:infrastructure       # Clean infrastructure caches and state files
     ./infra clean dev:athena               # Clean single module cache and state files
+    ./infra clean dev:all --outputs       # Clean caches and output files
   
   When to use: Cache corruption, provider issues, debugging, state file cleanup
+  Note: Use --outputs flag to also remove output files and logs
 
 ═══════════════════════════════════════════════════════════════════════════
 💾 VOLUME MANAGEMENT
@@ -1309,6 +1325,12 @@ SPECIALIZED FLAGS:
   --clean                Remove output files after operation
                          • Cleans up JSON output files
                          • Useful for space management
+  
+  --outputs              Remove output files during clean operations
+                         • Only affects clean action
+                         • Removes module output.json files
+                         • Removes environment outputs/ directory
+                         • Without flag, output files are preserved
 
 SHUTDOWN-SPECIFIC FLAGS:
   --bounce               Complete infrastructure rebuild
@@ -1872,25 +1894,30 @@ EOF
 ═══════════════════════════════════════════════════════════════════════════
 
 PURPOSE:
-  Removes .terragrunt-cache, output.json, logs, outputs/, and .terraform files.
-  KISS approach for complete cleanup based on target scope.
+  Removes .terragrunt-cache and .terraform files by default.
+  Use --outputs flag to also remove output files and logs.
+  KISS approach for selective cleanup based on target scope and flags.
 
 USAGE:
   ./infra clean <target> [flags]
 
-WHAT GETS CLEANED (Module Level):
+WHAT GETS CLEANED (Module Level - Always):
   • .terragrunt-cache/     - Terragrunt cache directories
-  • output.json           - Generated output files
   • .terraform/           - Terraform state and provider cache  
   • .terraform.lock.hcl   - Terraform dependency lock files
   • terraform.tfstate     - Local terraform state files
   • terraform.tfstate.backup - Local terraform state backup files
 
-WHAT GETS CLEANED (Environment Level - only with 'all' target):
+WHAT GETS CLEANED (Module Level - With --outputs flag):
+  • output.json           - Generated output files
+
+WHAT GETS CLEANED (Environment Level - Always):
   • <env>/log/            - All operation logs
-  • <env>/outputs/        - All consolidated outputs
   • <env>/.terraform*     - Environment-level terraform files
   • <env>/terraform.tfstate* - Environment-level terraform state files
+
+WHAT GETS CLEANED (Environment Level - With --outputs flag):
+  • <env>/outputs/        - All consolidated outputs
 
 TARGET-BASED CLEANING:
   dev:all                 Clean EVERYTHING in dev environment
@@ -1908,13 +1935,20 @@ WHEN TO USE CLEAN:
   • Troubleshooting
 
 FLAGS:
+  --outputs            Remove output files and logs in addition to cache
+                       • Removes output.json files from modules
+                       • Removes <env>/outputs/ directory
+                       • Without this flag, output files are preserved
   --dry-run            Preview what would be cleaned
   --verbose [0|1]      Show detailed cleaning process
   --no-color           Plain text output
 
 EXAMPLES:
-  # Clean everything in dev environment
+  # Clean everything in dev environment (cache only)
   ./infra clean dev:all
+  
+  # Clean everything including output files
+  ./infra clean dev:all --outputs
   
   # Clean infrastructure modules only
   ./infra clean dev:infrastructure
@@ -1922,14 +1956,14 @@ EXAMPLES:
   # Clean instance modules only
   ./infra clean dev:instances
   
-  # Clean single module
-  ./infra clean dev:athena
+  # Clean single module with outputs
+  ./infra clean dev:athena --outputs
   
   # Preview cleaning with dry-run
-  ./infra clean dev:all --dry-run
+  ./infra clean dev:all --outputs --dry-run
   
   # Clean with detailed output
-  ./infra clean dev:all --verbose 1
+  ./infra clean dev:all --outputs --verbose 1
 
 TYPICAL CLEAN WORKFLOW:
   1. ./infra clean dev:all               # Full cleanup
