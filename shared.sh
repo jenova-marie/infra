@@ -828,18 +828,96 @@ cleanup_known_hosts() {
             info_message "🧹 Cleaning SSH known_hosts entries for applied instances..."
         fi
         
-        # Check if we're in dry-run mode (using standardized function)
-        if is_dry_run; then
-            dry_run_message "[DRY-RUN] Would clean SSH known_hosts entries for applied instances"
-            return 0
-        fi
-        
-        # Get environment and target information
-        local env="${ENVIRONMENT:-}"
-        local target_type="${TARGET_TYPE:-}"
+        # Get environment and target information from operation context
+        local env="${OP_ENV:-}"
+        local target_type="${OP_TARGET_TYPE:-}"
         
         if [[ -z "$env" ]]; then
             debug_message "No environment specified, skipping known_hosts cleanup"
+            return 0
+        fi
+        
+        # Check if we're in dry-run mode (using standardized function)
+        if is_dry_run; then
+            # In dry-run mode, still determine which instances would be cleaned and show details
+            local instances_to_clean=()
+            
+            case "$target_type" in
+                "all"|"instances")
+                    # Get all instance modules from the environment
+                    instances_to_clean=($(get_instance_modules_for_cleanup "$env"))
+                    ;;
+                "infrastructure")
+                    # Infrastructure changes don't affect instances directly
+                    debug_message "Infrastructure target, skipping known_hosts cleanup"
+                    return 0
+                    ;;
+                *)
+                    # Check if target is a single instance module
+                    if is_instance_module "$target_type"; then
+                        instances_to_clean=("$target_type")
+                    else
+                        debug_message "Target '$target_type' is not an instance module, skipping known_hosts cleanup"
+                        return 0
+                    fi
+                    ;;
+            esac
+            
+            if [[ ${#instances_to_clean[@]} -eq 0 ]]; then
+                debug_message "No instances to clean, skipping known_hosts cleanup"
+                return 0
+            fi
+            
+            # Show what would be cleaned in dry-run mode
+            dry_run_message "[DRY-RUN] Would clean SSH known_hosts entries for ${#instances_to_clean[@]} instance(s): ${instances_to_clean[*]}"
+            
+            # Show details for each instance
+            for instance in "${instances_to_clean[@]}"; do
+                dry_run_message "[DRY-RUN] Would clean known_hosts for $instance:"
+                
+                # Generate what would be cleaned (same logic as real cleanup but just show it)
+                local env_path="$(get_environment_path "$env")"
+                local output_file="$env_path/outputs/$instance.json"
+                
+                if [[ -f "$output_file" ]]; then
+                    # Extract potential IPs and hostnames to show what would be cleaned
+                    local ips_and_hosts=()
+                    
+                    # Get public IP
+                    local public_ip=$(jq -r '.public_ips.value.'"$instance"' // empty' "$output_file" 2>/dev/null)
+                    if [[ -n "$public_ip" && "$public_ip" != "null" ]]; then
+                        ips_and_hosts+=("$public_ip (public IP)")
+                    fi
+                    
+                    # Get EIP address
+                    local eip_address=$(jq -r '.eip_addresses.value.'"$instance"' // empty' "$output_file" 2>/dev/null)
+                    if [[ -n "$eip_address" && "$eip_address" != "null" && "$eip_address" != "$public_ip" ]]; then
+                        ips_and_hosts+=("$eip_address (EIP)")
+                    fi
+                    
+                    # Get private IP
+                    local private_ip=$(jq -r '.private_ips.value.'"$instance"' // empty' "$output_file" 2>/dev/null)
+                    if [[ -n "$private_ip" && "$private_ip" != "null" ]]; then
+                        ips_and_hosts+=("$private_ip (private IP)")
+                    fi
+                    
+                    # Add potential FQDNs
+                    ips_and_hosts+=(
+                        "$instance.rsx"
+                        "$instance.recoverysky.dev"
+                        "$instance-$env.recoverysky.dev"
+                        "$instance.$env.recoverysky.dev"
+                    )
+                    
+                    # Show what would be cleaned
+                    for host_or_ip in "${ips_and_hosts[@]}"; do
+                        dry_run_message "[DRY-RUN]   - $host_or_ip"
+                    done
+                else
+                    dry_run_message "[DRY-RUN]   - No output file found: $output_file"
+                fi
+            done
+            
             return 0
         fi
         
@@ -923,7 +1001,7 @@ get_instance_modules_for_cleanup() {
 # Usage: is_instance_module "athena"
 is_instance_module() {
     local module="$1"
-    local env="${ENVIRONMENT:-}"
+    local env="${OP_ENV:-}"
     
     if [[ -z "$env" ]]; then
         return 1
