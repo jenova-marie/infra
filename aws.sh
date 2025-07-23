@@ -61,15 +61,21 @@ get_aws_region() {
 validate_aws_cli() {
     debug_message "Validating AWS CLI availability and configuration"
     
-    # Check if aws command is available
-    if ! command -v aws >/dev/null 2>&1; then
+    # Get the full path to AWS CLI to avoid shell configuration issues
+    local aws_path
+    if ! aws_path=$(command -v aws); then
         debug_message "AWS CLI is not installed"
         return 1
     fi
     
-    # Check if AWS credentials are configured
-    if ! aws sts get-caller-identity >/dev/null 2>&1; then
+    debug_message "Using AWS CLI at: $aws_path"
+    
+    # Check if AWS credentials are configured using full path
+    # Set a default region to avoid endpoint issues
+    local aws_output
+    if ! aws_output=$(AWS_DEFAULT_REGION="${AWS_REGION:-us-east-2}" "$aws_path" sts get-caller-identity --region "${AWS_REGION:-us-east-2}" 2>&1); then
         debug_message "AWS CLI is not configured or credentials are invalid"
+        debug_message "AWS CLI error output: $aws_output"
         return 1
     fi
     
@@ -614,6 +620,244 @@ start_instance() {
 # - Security group modifications
 # - CloudWatch logs retrieval
 # - Parameter store operations
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AWS Secrets Manager Operations - Secrets Protection System
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Clear secrets for modules marked with destroy: false
+# Usage: clear_secrets_for_destroy_disabled_modules "dev" "secrets"
+clear_secrets_for_destroy_disabled_modules() {
+    local env="$1"
+    local target_type="$2"
+    
+    debug_message "Checking for destroy-disabled modules to clear secrets: env=$env, target=$target_type"
+    
+    # Validate AWS CLI is available
+    if ! validate_aws_cli; then
+        warn_message "AWS CLI not available for secrets clearing"
+        return 1
+    fi
+    
+    # Get target modules
+    local target_modules=()
+    while IFS= read -r module; do
+        [[ -n "$module" ]] && target_modules+=("$module")
+    done < <(get_modules_for_target "$target_type")
+    
+    # Find modules with destroy: false
+    local destroy_disabled_modules=()
+    for module in "${target_modules[@]}"; do
+        if is_module_destroy_disabled "$module"; then
+            destroy_disabled_modules+=("$module")
+            debug_message "Found destroy-disabled module: $module"
+        fi
+    done
+    
+    if [[ ${#destroy_disabled_modules[@]} -eq 0 ]]; then
+        debug_message "No destroy-disabled modules found in target"
+        return 0
+    fi
+    
+    info_message "🔒 Found ${#destroy_disabled_modules[@]} destroy-disabled module(s): ${destroy_disabled_modules[*]}"
+    info_message "🧹 Clearing secret values instead of destroying infrastructure..."
+    
+    # Clear secrets for each destroy-disabled module
+    local success_count=0
+    local failure_count=0
+    
+    for module in "${destroy_disabled_modules[@]}"; do
+        if clear_module_secrets "$env" "$module"; then
+            ((success_count++))
+        else
+            ((failure_count++))
+        fi
+    done
+    
+    # Report results and handle failures
+    if [[ $failure_count -eq 0 ]]; then
+        success_message "✅ Successfully cleared secrets for $success_count module(s)"
+        return 0
+    else
+        error_message "❌ Failed to clear secrets for $failure_count module(s)"
+        error_message "Secret clearing is required for destroy-disabled modules"
+        handle_error "Secrets clearing failed - operation aborted"
+    fi
+}
+
+# Clear all secrets for a specific module
+# Usage: clear_module_secrets "dev" "secrets"
+clear_module_secrets() {
+    local env="$1"
+    local module="$2"
+    
+    debug_message "Clearing secrets for module: $module in environment: $env"
+    
+    # Get AWS region for this environment
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env"); then
+        error_message "Could not determine AWS region for environment: $env"
+        return 1
+    fi
+    
+    debug_message "Using AWS region: $aws_region"
+    
+    # Get secrets directory path
+    local env_path="$(get_environment_path "$env")"
+    local secrets_dir="$env_path/$module/secrets"
+    
+    debug_message "Scanning secrets directory: $secrets_dir"
+    
+    if [[ ! -d "$secrets_dir" ]]; then
+        warn_message "Secrets directory not found: $secrets_dir"
+        debug_message "Module $module may not have any secrets to clear"
+        return 0
+    fi
+    
+    # Find all .yml files in secrets directory
+    local secret_files=()
+    while IFS= read -r -d '' file; do
+        secret_files+=("$file")
+    done < <(find "$secrets_dir" -name "*.yml" -type f -print0 2>/dev/null)
+    
+    if [[ ${#secret_files[@]} -eq 0 ]]; then
+        warn_message "No secret files (*.yml) found in: $secrets_dir"
+        debug_message "Module $module has no secrets to clear"
+        return 0
+    fi
+    
+    info_message "🔍 Found ${#secret_files[@]} secret file(s) in $module module"
+    
+    # Process each secret file
+    local cleared_count=0
+    local failed_count=0
+    
+    for secret_file in "${secret_files[@]}"; do
+        local filename=$(basename "$secret_file")
+        info_message "📄 Processing secret file: $filename"
+        
+        if clear_secrets_from_file "$secret_file" "$aws_region"; then
+            ((cleared_count++))
+            success_message "✅ Cleared secrets from: $filename"
+        else
+            ((failed_count++))
+            error_message "❌ Failed to clear secrets from: $filename"
+        fi
+    done
+    
+    # Report results for this module
+    if [[ $failed_count -eq 0 ]]; then
+        success_message "✅ Module $module: cleared $cleared_count secret file(s)"
+        return 0
+    else
+        error_message "❌ Module $module: $failed_count secret file(s) failed to clear"
+        return 1
+    fi
+}
+
+# Clear secrets defined in a YAML file
+# Usage: clear_secrets_from_file "/path/to/secrets.yml" "us-east-2"
+clear_secrets_from_file() {
+    local secret_file="$1"
+    local aws_region="$2"
+    
+    debug_message "Clearing secrets from file: $secret_file"
+    
+    if [[ ! -f "$secret_file" ]]; then
+        error_message "Secret file not found: $secret_file"
+        return 1
+    fi
+    
+    # Extract secret names from YAML file
+    local secret_names=()
+    while IFS= read -r secret_name; do
+        if [[ -n "$secret_name" ]]; then
+            secret_names+=("$secret_name")
+            debug_message "Found secret in file: $secret_name"
+        fi
+    done < <(yq eval '.secrets | keys | .[]' "$secret_file" 2>/dev/null)
+    
+    if [[ ${#secret_names[@]} -eq 0 ]]; then
+        warn_message "No secrets found in file: $secret_file"
+        return 0
+    fi
+    
+    debug_message "Found ${#secret_names[@]} secret(s) to clear: ${secret_names[*]}"
+    
+    # Clear each secret
+    local success_count=0
+    local failure_count=0
+    
+    for secret_key in "${secret_names[@]}"; do
+        # Get the secret name/ARN from the YAML
+        local secret_name=$(yq eval ".secrets.\"$secret_key\".name" "$secret_file" 2>/dev/null)
+        
+        if [[ -z "$secret_name" || "$secret_name" == "null" ]]; then
+            error_message "Secret name not found for key: $secret_key"
+            ((failure_count++))
+            continue
+        fi
+        
+        debug_message "Clearing secret: $secret_name (key: $secret_key)"
+        
+        if clear_aws_secret "$secret_name" "$aws_region"; then
+            ((success_count++))
+            info_message "  ✅ Cleared: $secret_name"
+        else
+            ((failure_count++))
+            error_message "  ❌ Failed: $secret_name"
+        fi
+    done
+    
+    # Return success only if all secrets were cleared
+    if [[ $failure_count -eq 0 ]]; then
+        debug_message "Successfully cleared $success_count secret(s) from file"
+        return 0
+    else
+        error_message "Failed to clear $failure_count secret(s) from file"
+        return 1
+    fi
+}
+
+# Clear a single AWS secret by setting its value to "infra.sh cleared"
+# Usage: clear_aws_secret "secret-name" "us-east-2"
+clear_aws_secret() {
+    local secret_name="$1"
+    local aws_region="$2"
+    
+    debug_message "Clearing AWS secret: $secret_name in region: $aws_region"
+    
+    if is_dry_run; then
+        dry_run_message "[DRY-RUN] Would clear AWS secret: $secret_name"
+        dry_run_message "[DRY-RUN] AWS CLI command: aws secretsmanager update-secret --secret-id '$secret_name' --secret-string 'infra.sh cleared' --region $aws_region"
+        return 0
+    fi
+    
+    # Get the full path to AWS CLI to avoid shell configuration issues
+    local aws_path
+    if ! aws_path=$(command -v aws); then
+        error_message "AWS CLI not found for secret clearing"
+        return 1
+    fi
+    
+    # Execute AWS CLI command to clear the secret
+    local aws_output=""
+    if aws_output=$(AWS_DEFAULT_REGION="$aws_region" "$aws_path" secretsmanager update-secret \
+        --secret-id "$secret_name" \
+        --secret-string "infra.sh cleared" \
+        --region "$aws_region" 2>&1); then
+        
+        debug_message "AWS CLI command executed successfully"
+        debug_message "AWS CLI output: $aws_output"
+        return 0
+    else
+        local exit_code=$?
+        debug_message "AWS CLI command failed with exit code: $exit_code"
+        debug_message "AWS CLI error output: $aws_output"
+        error_message "AWS CLI secret clearing failed for $secret_name: $aws_output"
+        return 1
+    fi
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Module Export

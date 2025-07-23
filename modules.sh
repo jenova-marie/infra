@@ -117,12 +117,32 @@ load_infrastructure_modules() {
                 ALL_INFRASTRUCTURE_MODULES+=("$module")
                 debug_message "Added infrastructure module: $module"
                 
-                # Check if protected from destroy
+                # Check if protected from destroy (protected: true)
                 local is_protected=$(yq eval ".infrastructure[] | select(.name == \"$module\") | .protected // false" "$modules_file" 2>/dev/null || echo "false")
                 debug_message "Module $module protection check: is_protected=$is_protected"
-                if [[ "$is_protected" == "true" ]]; then
+                local is_destroy_disabled=false
+                
+                # Check if module cannot be destroyed (destroy: false) - SECRETS PROTECTION
+                local destroy_field=$(yq eval ".infrastructure[] | select(.name == \"$module\") | has(\"destroy\")" "$modules_file" 2>/dev/null || echo "false")
+                if [[ "$destroy_field" == "true" ]]; then
+                    local destroy_allowed=$(yq eval ".infrastructure[] | select(.name == \"$module\") | .destroy" "$modules_file" 2>/dev/null || echo "true")
+                    debug_message "Module $module destroy check: destroy_allowed=$destroy_allowed"
+                    if [[ "$destroy_allowed" == "false" ]]; then
+                        is_destroy_disabled=true
+                        debug_message "Destroy-protected infrastructure module: $module (destroy: false)"
+                    fi
+                else
+                    debug_message "Module $module destroy check: no destroy field set (defaults to true)"
+                fi
+                
+                # Add to protected modules if either protection mechanism applies
+                if [[ "$is_protected" == "true" ]] || [[ "$is_destroy_disabled" == "true" ]]; then
                     PROTECTED_MODULES+=("$module")
-                    debug_message "Protected infrastructure module: $module"
+                    if [[ "$is_protected" == "true" && "$is_destroy_disabled" == "true" ]]; then
+                        debug_message "Protected infrastructure module: $module (protected: true + destroy: false)"
+                    elif [[ "$is_protected" == "true" ]]; then
+                        debug_message "Protected infrastructure module: $module (protected: true)"
+                    fi
                 else
                     debug_message "Module $module is NOT protected (protected: false or not set)"
                 fi
@@ -249,6 +269,50 @@ is_module_protected() {
         fi
     done < <(safe_array_iterate "PROTECTED_MODULES")
     
+    return 1
+}
+
+# Check if a module has destroy: false (cannot be destroyed, only cleared)
+# Usage: is_module_destroy_disabled "secrets"
+is_module_destroy_disabled() {
+    local module="$1"
+    
+    if ! is_modules_loaded; then
+        handle_error "Modules not loaded. Call load_modules() first"
+    fi
+    
+    # Get modules.yml file path for current environment
+    local env="${CURRENT_MODULES_ENV}"
+    if [[ -z "$env" ]]; then
+        handle_error "No current modules environment set"
+    fi
+    
+    local modules_file="$(get_environment_path "$env")/modules.yml"
+    if [[ ! -f "$modules_file" ]]; then
+        handle_error "modules.yml not found: $modules_file"
+    fi
+    
+    # Check if module has destroy: false in infrastructure section
+    local has_destroy_field=$(yq eval ".infrastructure[] | select(.name == \"$module\") | has(\"destroy\")" "$modules_file" 2>/dev/null || echo "false")
+    if [[ "$has_destroy_field" == "true" ]]; then
+        local destroy_allowed=$(yq eval ".infrastructure[] | select(.name == \"$module\") | .destroy" "$modules_file" 2>/dev/null || echo "true")
+        if [[ "$destroy_allowed" == "false" ]]; then
+            debug_message "Module $module has destroy: false"
+            return 0
+        fi
+    fi
+    
+    # Check if module has destroy: false in instances section
+    has_destroy_field=$(yq eval ".instances[] | select(.name == \"$module\") | has(\"destroy\")" "$modules_file" 2>/dev/null || echo "false")
+    if [[ "$has_destroy_field" == "true" ]]; then
+        local destroy_allowed=$(yq eval ".instances[] | select(.name == \"$module\") | .destroy" "$modules_file" 2>/dev/null || echo "true")
+        if [[ "$destroy_allowed" == "false" ]]; then
+            debug_message "Module $module has destroy: false"
+            return 0
+        fi
+    fi
+    
+    debug_message "Module $module does not have destroy: false"
     return 1
 }
 

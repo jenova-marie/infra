@@ -86,6 +86,14 @@ execute_standard_operation() {
     # Validate destroy operations against protected modules
     validate_destroy_operation "$OP_TARGET_TYPE" "$OP_ACTION"
     
+    # SECRETS PROTECTION: Clear secrets for destroy-disabled modules when --force is used
+    if [[ "$OP_ACTION" == "destroy" ]] && is_force; then
+        debug_message "Force destroy detected - checking for destroy-disabled modules to clear"
+        if ! clear_secrets_for_destroy_disabled_modules "$OP_ENV" "$OP_TARGET_TYPE"; then
+            handle_error "Failed to clear secrets for destroy-disabled modules"
+        fi
+    fi
+    
     # Build command arguments based on target type
     local command_args=""
     
@@ -206,6 +214,14 @@ execute_standard_operation_with_params() {
     
     # Validate destroy operations against protected modules
     validate_destroy_operation "$OP_TARGET_TYPE" "$OP_ACTION"
+    
+    # SECRETS PROTECTION: Clear secrets for destroy-disabled modules when --force is used
+    if [[ "$OP_ACTION" == "destroy" ]] && is_force; then
+        debug_message "Force destroy detected - checking for destroy-disabled modules to clear"
+        if ! clear_secrets_for_destroy_disabled_modules "$OP_ENV" "$OP_TARGET_TYPE"; then
+            handle_error "Failed to clear secrets for destroy-disabled modules"
+        fi
+    fi
     
     # Build command arguments based on target type
     local command_args=""

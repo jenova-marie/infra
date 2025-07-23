@@ -45,27 +45,52 @@ generate_terragrunt_exclusions() {
                 done < <(get_infrastructure_modules)
             fi
             
-            # For destroy operations without --force, exclude protected modules
-            if [[ "${OP_ACTION:-}" == "destroy" ]] && ! (declare -f is_force >/dev/null 2>&1 && is_force); then
-                debug_message "Destroy operation detected - checking for protected modules"
-                local protected_modules=()
-                while IFS= read -r module; do
-                    if [[ -n "$module" ]]; then
-                        protected_modules+=("$module")
-                        debug_message "Found protected module: $module"
-                    fi
-                done < <(get_protected_modules)
+            # For destroy operations, handle protection logic
+            if [[ "${OP_ACTION:-}" == "destroy" ]]; then
+                debug_message "Destroy operation detected - checking for protected and destroy-disabled modules"
                 
-                if [[ ${#protected_modules[@]} -gt 0 ]]; then
-                    debug_message "Adding protected modules to exclusions: ${protected_modules[*]}"
-                    for module in "${protected_modules[@]}"; do
-                        exclusions+=("$module")
-                    done
+                # CRITICAL: Always exclude destroy-disabled modules, regardless of --force
+                local target_modules=()
+                if [[ "$target_type" == "infrastructure" ]]; then
+                    while IFS= read -r module; do
+                        [[ -n "$module" ]] && target_modules+=("$module")
+                    done < <(get_infrastructure_modules)
                 else
-                    debug_message "No protected modules found"
+                    while IFS= read -r module; do
+                        [[ -n "$module" ]] && target_modules+=("$module")
+                    done < <(get_instance_modules)
+                fi
+                
+                for module in "${target_modules[@]}"; do
+                    if is_module_destroy_disabled "$module"; then
+                        exclusions+=("$module")
+                        debug_message "Found destroy-disabled module: $module - ALWAYS excluded from terragrunt"
+                    fi
+                done
+                
+                # For protected modules, only exclude if --force is not used
+                if ! (declare -f is_force >/dev/null 2>&1 && is_force); then
+                    local protected_modules=()
+                    while IFS= read -r module; do
+                        if [[ -n "$module" ]] && ! is_module_destroy_disabled "$module"; then
+                            protected_modules+=("$module")
+                            debug_message "Found protected module: $module"
+                        fi
+                    done < <(get_protected_modules)
+                    
+                    if [[ ${#protected_modules[@]} -gt 0 ]]; then
+                        debug_message "Adding protected modules to exclusions: ${protected_modules[*]}"
+                        for module in "${protected_modules[@]}"; do
+                            exclusions+=("$module")
+                        done
+                    else
+                        debug_message "No protected modules found"
+                    fi
+                else
+                    debug_message "--force is enabled - skipping protected module exclusions (but keeping destroy-disabled exclusions)"
                 fi
             else
-                debug_message "Not a destroy operation or --force is enabled - skipping protected module exclusions"
+                debug_message "Not a destroy operation - skipping protection checks"
             fi
             ;;
             
@@ -77,27 +102,46 @@ generate_terragrunt_exclusions() {
                 [[ -n "$module" ]] && exclusions+=("$module")
             done < <(get_disabled_modules)
             
-            # For destroy operations without --force, exclude protected modules
-            if [[ "${OP_ACTION:-}" == "destroy" ]] && ! (declare -f is_force >/dev/null 2>&1 && is_force); then
-                debug_message "Destroy operation detected for 'all' target - checking for protected modules"
-                local protected_modules=()
-                while IFS= read -r module; do
-                    if [[ -n "$module" ]]; then
-                        protected_modules+=("$module")
-                        debug_message "Found protected module: $module"
-                    fi
-                done < <(get_protected_modules)
+            # For destroy operations, handle protection logic
+            if [[ "${OP_ACTION:-}" == "destroy" ]]; then
+                debug_message "Destroy operation detected for 'all' target - checking for protected and destroy-disabled modules"
                 
-                if [[ ${#protected_modules[@]} -gt 0 ]]; then
-                    debug_message "Adding protected modules to exclusions: ${protected_modules[*]}"
-                    for module in "${protected_modules[@]}"; do
+                # CRITICAL: Always exclude destroy-disabled modules, regardless of --force
+                local all_modules=()
+                while IFS= read -r module; do
+                    [[ -n "$module" ]] && all_modules+=("$module")
+                done < <(get_all_modules)
+                
+                for module in "${all_modules[@]}"; do
+                    if is_module_destroy_disabled "$module"; then
                         exclusions+=("$module")
-                    done
+                        debug_message "Found destroy-disabled module: $module - ALWAYS excluded from terragrunt"
+                    fi
+                done
+                
+                # For protected modules, only exclude if --force is not used
+                if ! (declare -f is_force >/dev/null 2>&1 && is_force); then
+                    local protected_modules=()
+                    while IFS= read -r module; do
+                        if [[ -n "$module" ]] && ! is_module_destroy_disabled "$module"; then
+                            protected_modules+=("$module")
+                            debug_message "Found protected module: $module"
+                        fi
+                    done < <(get_protected_modules)
+                    
+                    if [[ ${#protected_modules[@]} -gt 0 ]]; then
+                        debug_message "Adding protected modules to exclusions: ${protected_modules[*]}"
+                        for module in "${protected_modules[@]}"; do
+                            exclusions+=("$module")
+                        done
+                    else
+                        debug_message "No protected modules found"
+                    fi
                 else
-                    debug_message "No protected modules found"
+                    debug_message "--force is enabled - skipping protected module exclusions (but keeping destroy-disabled exclusions)"
                 fi
             else
-                debug_message "Not a destroy operation or --force is enabled - skipping protected module exclusions"
+                debug_message "Not a destroy operation - skipping protection checks"
             fi
             ;;
             
@@ -114,18 +158,23 @@ generate_terragrunt_exclusions() {
                 [[ -n "$module" ]] && exclusions+=("$module")
             done < <(get_disabled_modules)
             
-            # For destroy operations without --force, check if target module is protected
-            if [[ "${OP_ACTION:-}" == "destroy" ]] && ! (declare -f is_force >/dev/null 2>&1 && is_force); then
-                debug_message "Destroy operation detected for single module '$target_type' - checking if protected"
-                if is_module_protected "$target_type"; then
-                    # Add the target module itself to exclusions (blocks the operation)
+            # For destroy operations, check if target module is protected or destroy-disabled
+            if [[ "${OP_ACTION:-}" == "destroy" ]]; then
+                debug_message "Destroy operation detected for single module '$target_type' - checking protection status"
+                
+                # CRITICAL: Always exclude destroy-disabled modules from terragrunt operations
+                if is_module_destroy_disabled "$target_type"; then
                     exclusions+=("$target_type")
-                    debug_message "Target module $target_type is protected - added to exclusions"
+                    debug_message "Target module $target_type has destroy: false - ALWAYS excluded from terragrunt destroy"
+                elif ! (declare -f is_force >/dev/null 2>&1 && is_force) && is_module_protected "$target_type"; then
+                    # Only exclude protected modules if --force is not used
+                    exclusions+=("$target_type")
+                    debug_message "Target module $target_type is protected - added to exclusions (no --force)"
                 else
-                    debug_message "Target module $target_type is not protected"
+                    debug_message "Target module $target_type will be processed by terragrunt destroy"
                 fi
             else
-                debug_message "Not a destroy operation or --force is enabled - skipping protected module check"
+                debug_message "Not a destroy operation - skipping protection checks"
             fi
             ;;
     esac

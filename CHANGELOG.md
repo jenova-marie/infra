@@ -6,6 +6,73 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.27] - 2025-01-21 - Secrets Protection System: destroy: false Module Support 🔒✨
+
+### 🔒 **NEW FEATURE: Secrets Protection System**
+
+#### **Problem Solved**
+- **Accidental secret destruction**: AWS Secrets Manager resources could be accidentally destroyed during infrastructure operations
+- **No permanent protection**: Existing `protected: true` flag could be overridden with `--force`, still allowing destruction
+- **Need for value clearing**: Sometimes secret values need to be reset without destroying the secret infrastructure
+
+#### **Solution: `destroy: false` Module Flag**
+```yaml
+# modules.yml
+infrastructure:
+  - name: secrets
+    protected: true
+    destroy: false  # ← NEW: Secret infrastructure can NEVER be destroyed
+```
+
+#### **New Behavior** ✅
+
+**Without `--force` flag:**
+```bash
+infra destroy dev:secrets              # → Skipped entirely (no changes)
+infra destroy dev:infrastructure       # → Skips secrets module
+infra destroy dev:all                  # → Skips secrets module
+```
+
+**With `--force` flag:**
+```bash
+infra destroy dev:secrets --force      # → Clears secret VALUES via AWS CLI (preserves infrastructure)
+infra destroy dev:all --force          # → Clears secrets + destroys other modules
+```
+
+#### **Technical Implementation**
+
+**📁 Secret Discovery:**
+- Scans `src/live/{env}/secrets/secrets/*.yml` files
+- Parses YAML to extract secret names: `.secrets.{key}.name`
+- Supports multiple secret files per module
+
+**🔧 AWS CLI Integration:**
+- Uses `aws secretsmanager update-secret --secret-string "infra.sh cleared"` to clear values
+- Preserves secret metadata, descriptions, and infrastructure
+- Fails fast if any secret clearing operation fails
+
+**🛡️ Module Protection Enhancement:**
+- Extended existing protection system to support `destroy: false`
+- Modules with `destroy: false` are added to `PROTECTED_MODULES[]` array
+- New function: `is_module_destroy_disabled()` for specific detection
+
+#### **Benefits** ✅
+
+- 🛡️ **Ultimate Protection**: Secret infrastructure can never be accidentally destroyed
+- 🔄 **Controlled Clearing**: Secret values can be safely reset when needed
+- 🎯 **Selective Operations**: Works seamlessly with all targeting methods
+- 📊 **Comprehensive Logging**: Detailed output for debugging and audit trails
+- 🧪 **Dry-run Support**: Preview secret clearing operations before execution
+- ♻️ **DRY Implementation**: Reuses existing protection infrastructure
+
+#### **Files Modified**
+- **[`modules.sh`](./modules.sh)**: Enhanced module loading to parse `destroy: false` flag
+- **[`aws.sh`](./aws.sh)**: Added AWS CLI secret clearing functions (4 new functions)
+- **[`operations.sh`](./operations.sh)**: Integrated secret clearing into destroy workflow
+- **[`args.sh`](./args.sh)**: Updated help text and documentation
+
+---
+
 ## [2.0.26] - 2025-01-14 - Critical Fix: Endpoint Flags Now Work with Group Operations 🚀✨
 
 ### 🎯 **Critical Fix: --ssm and --ecr Flags Now Work with Group Apply Operations**

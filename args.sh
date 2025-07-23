@@ -1047,9 +1047,17 @@ DESTROY - Remove infrastructure
     • eips (Elastic IP addresses)
     • ebss (EBS volumes)  
     • ecrs (Container registries)
+    • secrets (AWS Secrets Manager)
     
     These modules have 'protected: true' in modules.yml and cannot be destroyed
     without the --force flag to prevent accidental data loss.
+    
+  🔒 DESTROY-DISABLED MODULES: Some modules can NEVER be destroyed:
+    • secrets (destroy: false) - Secret infrastructure is permanent
+    
+    When --force is used on destroy-disabled modules, secret VALUES are cleared
+    (set to "infra.sh cleared") via AWS CLI instead of destroying the infrastructure. 
+    This prevents accidental loss of secret resources while allowing secure value reset.
   
   ⚠️  WARNING: This permanently removes resources! Use --dry-run first.
   Requirements:
@@ -1570,9 +1578,21 @@ PROTECTED MODULES:
     • eips (Elastic IP addresses) - prevents accidental IP loss
     • ebss (EBS volumes) - prevents data loss  
     • ecrs (Container registries) - prevents image loss
+    • secrets (AWS Secrets Manager) - prevents accidental secret loss
   
   These modules have 'protected: true' in modules.yml and cannot be destroyed
   without the --force flag to prevent accidental data loss.
+
+DESTROY-DISABLED MODULES:
+  🔒 SECURITY: Some modules can NEVER be destroyed, only cleared:
+    • secrets (destroy: false) - Secret infrastructure is permanent
+  
+  BEHAVIOR WITH --force FLAG:
+    Without --force: Operation skipped entirely (no changes)
+    With --force:    Secret VALUES cleared (set to "infra.sh cleared") via AWS CLI (infrastructure preserved)
+    
+  This ensures secret resources are never accidentally deleted while allowing
+  secure reset of secret values when explicitly requested.
 
 FLAGS:
   --force              Force destruction of protected modules

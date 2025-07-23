@@ -2,7 +2,7 @@
 
 **Last Updated:** January 14, 2025 at 5:30 PM CST
 
-**Version:** 2.0.26  
+**Version:** 2.0.27  
 **Purpose:** Simplified, reliable infrastructure orchestration for Terraform/Terragrunt with DRY AWS CLI integration
 
 ---
@@ -21,6 +21,57 @@ This system follows a **"simplicity first"** approach with these core principles
 - **Modular Shared Code**: Common operations (parsing, formatting, validation) are centralized
 - **Self-Documenting**: Comprehensive help system provides detailed guidance for all operations
 - **Endpoint Flag Intelligence**: Endpoint flags (`--ssm`, `--ecr`, `--s3`) work seamlessly with all targeting methods
+
+---
+
+## 🔒 **Secrets Protection System**
+
+### **Ultimate AWS Secrets Manager Protection**
+
+The infrastructure system includes a comprehensive secrets protection system that prevents accidental destruction of AWS Secrets Manager resources while providing controlled value clearing capabilities.
+
+#### **Protection Levels**
+
+**🚫 Destroy-Disabled Modules (`destroy: false`)**
+- **secrets** - Secret infrastructure can NEVER be destroyed
+- Infrastructure remains permanently intact regardless of `--force` flag
+- With `--force`: Secret VALUES are cleared via AWS CLI (infrastructure preserved)
+- Without `--force`: Operation skipped entirely
+
+**🔒 Protected Modules (`protected: true`)**
+- Standard protection that can be overridden with `--force`
+- Prevents accidental destruction in normal operations
+
+#### **Secrets Clearing Behavior**
+
+```bash
+# Safe operations (secrets protected)
+./infra destroy dev:secrets              # → "Secrets module protected, skipping"
+./infra destroy dev:all                  # → Destroys everything EXCEPT secrets
+
+# Force operations (secrets cleared, not destroyed)
+./infra destroy dev:secrets --force      # → Clears secret values via AWS CLI
+./infra destroy dev:all --force          # → Clears secrets + destroys other modules
+
+# Dry-run mode shows what would be cleared
+./infra destroy dev:secrets --force --dry-run
+# → [DRY-RUN] Would clear AWS secret: mnemosyne/jwt/v1
+```
+
+#### **Secret Discovery**
+
+The system automatically scans `secrets/secrets/*.yml` files in the secrets module:
+
+```yaml
+# src/live/dev/secrets/secrets/mnemosyne.yml
+secrets:
+  mnemosyne-jwt:
+    name: "mnemosyne/jwt/v1"
+    description: "JWT for mnemosyne to access Infisical"
+    secret_string: "your-jwt-key-here"
+```
+
+When cleared with `--force`, the `secret_string` value is set to `"infra.sh cleared"` while preserving all metadata and infrastructure.
 
 ---
 
