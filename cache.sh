@@ -87,14 +87,29 @@ execute_clean_operation() {
 # Usage: clean_module_files "athena"
 clean_module_files() {
     local module="$1"
-    
-    # Change to module directory
-    local original_dir=$(pwd)
-    cd "$module"
-    
+    local original_dir
     local success=true
+    local removed_items=()
+    local failed_items=()
     
-    # KISS: Remove files with simple commands
+    # Validate module directory exists before attempting to change to it
+    if [[ ! -d "$module" ]]; then
+        debug_message "Module directory does not exist: $module (skipping cleanup)"
+        return 0  # Not an error if directory doesn't exist
+    fi
+    
+    # Store current directory and attempt to change to module directory
+    original_dir=$(pwd)
+    if ! cd "$module" 2>/dev/null; then
+        warn_message "Failed to change to module directory: $module"
+        return 1
+    fi
+    
+    # Ensure we return to original directory on any exit (trap for safety)
+    trap "cd '$original_dir' 2>/dev/null || true" RETURN
+    
+    debug_message "Cleaning cache files for module: $module"
+    
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would remove in $module:"
         [[ -d ".terragrunt-cache" ]] && dry_run_message "[DRY-RUN]   .terragrunt-cache/"
@@ -103,69 +118,86 @@ clean_module_files() {
         [[ -f ".terraform.lock.hcl" ]] && dry_run_message "[DRY-RUN]   .terraform.lock.hcl"
         [[ -f "terraform.tfstate" ]] && dry_run_message "[DRY-RUN]   terraform.tfstate"
         [[ -f "terraform.tfstate.backup" ]] && dry_run_message "[DRY-RUN]   terraform.tfstate.backup"
-    else
-        local removed_items=()
-        
-        # Remove .terragrunt-cache directories
-        if [[ -d ".terragrunt-cache" ]]; then
-            if rm -rf .terragrunt-cache 2>/dev/null; then
-                removed_items+=(".terragrunt-cache/")
-            else
-                success=false
-            fi
-        fi
-        
-        # Remove output.json files (handle both symlinks and actual files)
-        if is_outputs && [[ -f "output.json" ]]; then
-            if rm -f output.json 2>/dev/null; then
-                removed_items+=("output.json")
-            else
-                success=false
-            fi
-        fi
-        
-        # Remove .terraform directories and lock files
-        if [[ -d ".terraform" ]]; then
-            if rm -rf .terraform 2>/dev/null; then
-                removed_items+=(".terraform/")
-            else
-                success=false
-            fi
-        fi
-        
-        if [[ -f ".terraform.lock.hcl" ]]; then
-            if rm -f .terraform.lock.hcl 2>/dev/null; then
-                removed_items+=(".terraform.lock.hcl")
-            else
-                success=false
-            fi
-        fi
-        
-        # Remove terraform.tfstate files (local state files)
-        if [[ -f "terraform.tfstate" ]]; then
-            if rm -f terraform.tfstate 2>/dev/null; then
-                removed_items+=("terraform.tfstate")
-            else
-                success=false
-            fi
-        fi
-        
-        if [[ -f "terraform.tfstate.backup" ]]; then
-            if rm -f terraform.tfstate.backup 2>/dev/null; then
-                removed_items+=("terraform.tfstate.backup")
-            else
-                success=false
-            fi
-        fi
-        
-        # Report what was cleaned
-        if [[ ${#removed_items[@]} -gt 0 ]]; then
-            info_message "✅ Cleaned from $module: ${removed_items[*]}"
-        fi
+        return 0
     fi
     
-    # Return to original directory
-    cd "$original_dir"
+    # Define cleanup function with proper error handling and race condition mitigation
+    cleanup_file_or_dir() {
+        local target="$1"
+        local target_type="$2"  # "file" or "directory"
+        local error_msg
+        
+        # Check if target still exists (race condition protection)
+        if [[ ! -e "$target" ]]; then
+            debug_message "Target $target no longer exists (possibly cleaned by another process)"
+            return 0
+        fi
+        
+        # Use appropriate removal command with detailed error capture
+        if [[ "$target_type" == "directory" ]]; then
+            if error_msg=$(rm -rf "$target" 2>&1); then
+                removed_items+=("$target/")
+                debug_message "Successfully removed directory: $target"
+                return 0
+            else
+                failed_items+=("$target/ (error: $error_msg)")
+                debug_message "Failed to remove directory $target: $error_msg"
+                return 1
+            fi
+        else
+            if error_msg=$(rm -f "$target" 2>&1); then
+                removed_items+=("$target")
+                debug_message "Successfully removed file: $target"
+                return 0
+            else
+                failed_items+=("$target (error: $error_msg)")
+                debug_message "Failed to remove file $target: $error_msg"
+                return 1
+            fi
+        fi
+    }
+    
+    # Remove .terragrunt-cache directories (most common race condition source)
+    if [[ -d ".terragrunt-cache" ]]; then
+        cleanup_file_or_dir ".terragrunt-cache" "directory" || success=false
+    fi
+    
+    # Remove output.json files (handle both symlinks and actual files)
+    if is_outputs && [[ -e "output.json" ]]; then  # Use -e to handle symlinks too
+        cleanup_file_or_dir "output.json" "file" || success=false
+    fi
+    
+    # Remove .terraform directories and lock files
+    if [[ -d ".terraform" ]]; then
+        cleanup_file_or_dir ".terraform" "directory" || success=false
+    fi
+    
+    if [[ -f ".terraform.lock.hcl" ]]; then
+        cleanup_file_or_dir ".terraform.lock.hcl" "file" || success=false
+    fi
+    
+    # Remove terraform.tfstate files (local state files)
+    if [[ -f "terraform.tfstate" ]]; then
+        cleanup_file_or_dir "terraform.tfstate" "file" || success=false
+    fi
+    
+    if [[ -f "terraform.tfstate.backup" ]]; then
+        cleanup_file_or_dir "terraform.tfstate.backup" "file" || success=false
+    fi
+    
+    # Report results with detailed error information
+    if [[ ${#removed_items[@]} -gt 0 ]]; then
+        info_message "✅ Cleaned from $module: ${removed_items[*]}"
+    fi
+    
+    if [[ ${#failed_items[@]} -gt 0 ]]; then
+        warn_message "⚠️ Failed to clean from $module: ${failed_items[*]}"
+        success=false
+    fi
+    
+    if [[ ${#removed_items[@]} -eq 0 && ${#failed_items[@]} -eq 0 ]]; then
+        debug_message "No cleanup files found in $module"
+    fi
     
     return $([ "$success" = true ] && echo 0 || echo 1)
 }

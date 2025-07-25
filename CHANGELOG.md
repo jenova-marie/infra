@@ -6,6 +6,188 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.30] - 2025-01-14 - Critical Security & Reliability Fixes: Output System 🔒✨
+
+### 🔒 **SECURITY FIX: Directory Traversal Vulnerability in Output Generation**
+
+#### **Problem Solved**
+- **Directory traversal vulnerability**: Unsafe `cd "$module"` operations allowed potential directory traversal attacks
+- **Insufficient input validation**: Module names weren't validated before being used in file system operations
+- **Missing authorization checks**: No verification that modules were actually enabled/valid
+
+#### **Solution: Secure Module Path Validation**
+- **Input sanitization**: Module names validated against strict regex pattern `^[a-zA-Z0-9_-]+$`
+- **Path traversal protection**: Explicit checks for `..`, `/`, and `\` characters
+- **Authorization validation**: Verify module is enabled via `is_module_enabled()` before processing
+- **Secure path construction**: Use `get_module_path()` utility for absolute path construction
+- **Error handling**: Proper error reporting for security violations
+
+#### **Technical Implementation**
+```bash
+# Before: Unsafe directory change
+cd "$module"
+
+# After: Secure validation and path construction
+if [[ ! "$module" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    handle_error "Invalid module name format: $module"
+fi
+
+if [[ "$module" == *".."* || "$module" == *"/"* ]]; then
+    handle_error "Security violation: Module name contains path traversal characters"
+fi
+
+if ! is_module_enabled "$module"; then
+    debug_message "Module is not enabled: $module"
+    return 1
+fi
+
+module_path="$(get_module_path "$OP_ENV" "$module")"
+cd "$module_path"
+```
+
+### 🔧 **RELIABILITY FIX: Race Condition in Parallel Output Generation**
+
+#### **Problem Solved**
+- **PID tracking race condition**: Background processes could complete before PID capture
+- **Silent process failures**: No validation that processes actually started successfully
+- **Hanging operations**: No timeout protection for stuck background processes
+- **Inconsistent process counting**: Mismatch between expected and actual process counts
+
+#### **Solution: Robust Process Management**
+- **Atomic PID capture**: Immediate PID validation with `kill -0` check
+- **Process lifecycle tracking**: Count expected vs actual processes started
+- **Timeout protection**: 5-minute timeout per process with graceful termination
+- **Enhanced error reporting**: Detailed logging of process start/completion/failures
+- **Collision prevention**: Timestamp-based result file naming
+
+#### **Technical Implementation**
+```bash
+# Before: Race condition prone
+) &
+pids+=($!)
+
+# After: Atomic capture with validation
+) &
+local bg_pid=$!
+if [[ -n "$bg_pid" ]] && kill -0 "$bg_pid" 2>/dev/null; then
+    pids+=("$bg_pid")
+    ((expected_process_count++))
+else
+    warn_message "Failed to start background process for module: $module"
+fi
+
+# Timeout protection during wait
+while kill -0 "$pid" 2>/dev/null; do
+    if [[ $elapsed -gt $timeout_seconds ]]; then
+        kill -TERM "$pid" 2>/dev/null || true
+        break
+    fi
+    sleep 0.1
+done
+```
+
+#### **Benefits**
+- ✅ **Security hardening**: Prevents directory traversal and unauthorized module access
+- ✅ **Reliability improvement**: Robust parallel process management with timeout protection
+- ✅ **Enhanced debugging**: Clear error messages and process lifecycle logging
+- ✅ **Backward compatibility**: All existing functionality preserved
+- ✅ **Performance optimization**: Better resource management and cleanup
+
+---
+
+## [2.0.29] - 2025-01-14 - Critical Bug Fixes: Race Condition & Error Handling 🔧✨
+
+### 🔒 **BUG FIX: Race Condition in Cache Cleanup Operations**
+
+#### **Problem Solved**
+- **Race condition vulnerability**: Multiple processes could simultaneously access the same files during cleanup
+- **Silent failures**: Error suppression with `2>/dev/null` hid critical cleanup failures 
+- **Insufficient validation**: No directory existence checks before changing directories
+- **Poor error reporting**: Failures occurred without detailed error information
+
+#### **Solution: Robust Cleanup with Race Protection**
+- **Pre-validation**: Check module directory exists before attempting to change to it
+- **Race condition mitigation**: Verify files still exist before attempting removal
+- **Detailed error capture**: Replace `2>/dev/null` with proper error message capture  
+- **Trap-based safety**: Ensure directory restoration on any function exit
+- **Enhanced reporting**: Specific error details for failed operations
+
+#### **Technical Implementation**
+```bash
+# Before: Silent failures and race conditions
+if rm -rf .terragrunt-cache 2>/dev/null; then
+    removed_items+=(".terragrunt-cache/")
+else
+    success=false  # No error details
+fi
+
+# After: Race protection and detailed errors  
+cleanup_file_or_dir() {
+    # Check if target still exists (race condition protection)
+    if [[ ! -e "$target" ]]; then
+        debug_message "Target $target no longer exists (possibly cleaned by another process)"
+        return 0
+    fi
+    
+    # Capture detailed error information
+    if error_msg=$(rm -rf "$target" 2>&1); then
+        removed_items+=("$target/")
+        debug_message "Successfully removed directory: $target"
+    else
+        failed_items+=("$target/ (error: $error_msg)")
+        debug_message "Failed to remove directory $target: $error_msg"
+        return 1
+    fi
+}
+```
+
+#### **Benefits**
+- ✅ **Race condition protection**: Files checked for existence before removal
+- ✅ **Detailed error reporting**: Specific error messages instead of silent failures
+- ✅ **Improved reliability**: Better handling of concurrent cleanup operations
+- ✅ **Enhanced debugging**: Clear logging of what succeeded vs failed
+- ✅ **Directory safety**: Trap ensures we always return to original directory
+
+---
+
+## [2.0.28] - 2025-01-21 - Secrets Protection: Single secrets.yml File Support 📄✨
+
+### 🏗️ **STRUCTURAL UPDATE: Simplified Secrets Configuration**
+
+#### **Problem Solved**
+- **Complex directory structure**: Multiple YAML files in `secrets/secrets/` directory were difficult to manage
+- **File organization**: Having many small secret files scattered in subdirectories
+
+#### **Solution: Single secrets.yml File**
+```yaml
+# OLD: Multiple files in secrets/secrets/ directory
+src/live/dev/secrets/secrets/mnemosyne.yml
+src/live/dev/secrets/secrets/athena.yml
+src/live/dev/secrets/secrets/metis.yml
+
+# NEW: Single consolidated file
+src/live/dev/secrets/secrets.yml
+```
+
+#### **Updated Behavior** ✅
+- **Single file discovery**: System now looks for `secrets.yml` in module root instead of scanning `secrets/` subdirectory
+- **Simplified management**: All secrets for an environment consolidated in one file
+- **Cleaner structure**: Eliminates nested directory complexity
+- **Same functionality**: Secret clearing logic unchanged, just simplified file discovery
+
+#### **Technical Implementation**
+- **File path updated**: `$env_path/$module/secrets.yml` instead of `$env_path/$module/secrets/*.yml`
+- **Discovery logic**: Direct file check instead of directory scanning
+- **Backward compatible**: Same YAML structure and secret clearing mechanism
+
+#### **Benefits**
+- ✅ **Simplified configuration**: One file to manage all environment secrets
+- ✅ **Easier maintenance**: No scattered files across subdirectories
+- ✅ **Cleaner codebase**: Reduced complexity in secret discovery logic
+- ✅ **Better organization**: Clear single source of truth for secret definitions
+
+---
+
 ## [2.0.27] - 2025-01-21 - Secrets Protection System: destroy: false Module Support 🔒✨
 
 ### 🔒 **NEW FEATURE: Secrets Protection System**

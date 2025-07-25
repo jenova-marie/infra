@@ -702,31 +702,22 @@ clear_module_secrets() {
     
     debug_message "Using AWS region: $aws_region"
     
-    # Get secrets directory path
+    # Get secrets.yml file path (single file in module root)
     local env_path="$(get_environment_path "$env")"
-    local secrets_dir="$env_path/$module/secrets"
+    local secrets_file="$env_path/$module/secrets.yml"
     
-    debug_message "Scanning secrets directory: $secrets_dir"
+    debug_message "Looking for secrets file: $secrets_file"
     
-    if [[ ! -d "$secrets_dir" ]]; then
-        warn_message "Secrets directory not found: $secrets_dir"
+    if [[ ! -f "$secrets_file" ]]; then
+        warn_message "Secrets file not found: $secrets_file"
         debug_message "Module $module may not have any secrets to clear"
         return 0
     fi
     
-    # Find all .yml files in secrets directory
-    local secret_files=()
-    while IFS= read -r -d '' file; do
-        secret_files+=("$file")
-    done < <(find "$secrets_dir" -name "*.yml" -type f -print0 2>/dev/null)
+    info_message "🔍 Found secrets.yml file in $module module"
     
-    if [[ ${#secret_files[@]} -eq 0 ]]; then
-        warn_message "No secret files (*.yml) found in: $secrets_dir"
-        debug_message "Module $module has no secrets to clear"
-        return 0
-    fi
-    
-    info_message "🔍 Found ${#secret_files[@]} secret file(s) in $module module"
+    # Create array with single secrets file
+    local secret_files=("$secrets_file")
     
     # Process each secret file
     local cleared_count=0

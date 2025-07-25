@@ -1,4 +1,4 @@
-# Infrastructure Management System v2.0
+# Infrastructure Management System v2.0.28
 
 **Last Updated:** January 14, 2025 at 5:30 PM CST
 
@@ -60,12 +60,12 @@ The infrastructure system includes a comprehensive secrets protection system tha
 
 #### **Secret Discovery**
 
-The system automatically scans `secrets/secrets/*.yml` files in the secrets module:
+The system automatically reads the single `secrets.yml` file in the secrets module:
 
 ```yaml
-# src/live/dev/secrets/secrets/mnemosyne.yml
+# src/live/dev/secrets/secrets.yml
 secrets:
-  mnemosyne-jwt:
+  jenova-service-token:
     name: "mnemosyne/jwt/v1"
     description: "JWT for mnemosyne to access Infisical"
     secret_string: "your-jwt-key-here"

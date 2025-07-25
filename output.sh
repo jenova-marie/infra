@@ -23,15 +23,40 @@ generate_module_outputs() {
     
     debug_message "Generating outputs for module: $module"
     
-    # Check if module directory exists
-    if [[ ! -d "$module" ]]; then
-        debug_message "Module directory not found: $module"
+    # Validate module name for security (prevent directory traversal)
+    if [[ ! "$module" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        handle_error "Invalid module name format: $module. Module names must contain only alphanumeric characters, hyphens, and underscores"
         return 1
     fi
     
-    # Change to module directory
+    # Additional security check - no path traversal characters
+    if [[ "$module" == *".."* || "$module" == *"/"* || "$module" == *"\\"* ]]; then
+        handle_error "Security violation: Module name contains path traversal characters: $module"
+        return 1
+    fi
+    
+    # Verify module is enabled/valid before proceeding
+    if ! is_module_enabled "$module"; then
+        debug_message "Module is not enabled or does not exist in modules.yml: $module"
+        return 1
+    fi
+    
+    # Construct secure module path using validated components
+    local module_path
+    module_path="$(get_module_path "$OP_ENV" "$module")"
+    
+    # Check if module directory exists
+    if [[ ! -d "$module_path" ]]; then
+        debug_message "Module directory not found: $module_path"
+        return 1
+    fi
+    
+    # Change to module directory using secure absolute path
     local original_dir=$(pwd)
-    cd "$module"
+    if ! cd "$module_path" 2>/dev/null; then
+        handle_error "Failed to change to module directory: $module_path"
+        return 1
+    fi
     
     # Perform refresh if requested
     if is_refresh; then
@@ -126,15 +151,44 @@ generate_module_outputs_bg() {
     local original_dir=$(pwd)
     local absolute_result_file="$original_dir/$result_file"
     
-    # Check if module directory exists
-    if [[ ! -d "$module" ]]; then
-        debug_message "Module directory not found: $module"
+    # Validate module name for security (prevent directory traversal)
+    if [[ ! "$module" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        handle_error "Invalid module name format: $module. Module names must contain only alphanumeric characters, hyphens, and underscores"
         echo "FAIL" > "$absolute_result_file"
         return 1
     fi
     
-    # Change to module directory
-    cd "$module"
+    # Additional security check - no path traversal characters
+    if [[ "$module" == *".."* || "$module" == *"/"* || "$module" == *"\\"* ]]; then
+        handle_error "Security violation: Module name contains path traversal characters: $module"
+        echo "FAIL" > "$absolute_result_file"
+        return 1
+    fi
+    
+    # Verify module is enabled/valid before proceeding
+    if ! is_module_enabled "$module"; then
+        debug_message "Module is not enabled or does not exist in modules.yml: $module"
+        echo "FAIL" > "$absolute_result_file"
+        return 1
+    fi
+    
+    # Construct secure module path using validated components
+    local module_path
+    module_path="$(get_module_path "$OP_ENV" "$module")"
+    
+    # Check if module directory exists
+    if [[ ! -d "$module_path" ]]; then
+        debug_message "Module directory not found: $module_path"
+        echo "FAIL" > "$absolute_result_file"
+        return 1
+    fi
+    
+    # Change to module directory using secure absolute path
+    if ! cd "$module_path" 2>/dev/null; then
+        handle_error "Failed to change to module directory: $module_path"
+        echo "FAIL" > "$absolute_result_file"
+        return 1
+    fi
     
     # Perform refresh if requested
     if is_refresh; then
@@ -269,15 +323,20 @@ generate_outputs_parallel() {
     
     # Start background processes for each module - USE SAFE ITERATION
     local pids=()
+    local started_modules=()
+    local expected_process_count=0
+    
     while IFS= read -r module; do
         if [[ -n "$module" ]]; then
             debug_message "Starting parallel output generation for module: $module"
             
-            # Create unique result file for this module
-            local result_file="$OP_ENV.$module.result"
+            # Create unique result file for this module with timestamp to avoid collisions
+            local timestamp=$(date +%s.%N)
+            local result_file="$OP_ENV.$module.$timestamp.result"
             result_files+=("$result_file")
+            started_modules+=("$module")
             
-            # Start generation in background and capture PID
+            # Start generation in background and capture PID atomically
             (
                 if generate_module_outputs_bg "$module" "$result_file"; then
                     success_message "✅ Generated output for module: $module"
@@ -285,20 +344,74 @@ generate_outputs_parallel() {
                     warn_message "⚠️  Failed to generate output for module: $module"
                 fi
             ) &
-            pids+=($!)
+            
+            # Capture PID immediately and validate it
+            local bg_pid=$!
+            if [[ -n "$bg_pid" ]] && kill -0 "$bg_pid" 2>/dev/null; then
+                pids+=("$bg_pid")
+                ((expected_process_count++))
+                debug_message "Started background process $bg_pid for module: $module"
+            else
+                warn_message "Failed to start background process for module: $module"
+                # Remove the result file since process failed to start
+                rm -f "$result_file" 2>/dev/null || true
+            fi
         fi
     done < <(safe_array_iterate "modules")
     
-    # Wait for all background processes to complete - USE SAFE ITERATION
-    debug_message "Waiting for $(safe_array_length "pids") parallel processes to complete"
+    # Validate we started the expected number of processes
+    local actual_pid_count=${#pids[@]}
+    if [[ $actual_pid_count -ne $expected_process_count ]]; then
+        warn_message "PID tracking mismatch: expected $expected_process_count processes, got $actual_pid_count PIDs"
+    fi
+    
+    # Wait for all background processes to complete with timeout protection
+    debug_message "Waiting for $actual_pid_count parallel processes to complete"
     
     local wait_count=0
-    while IFS= read -r pid; do
+    local failed_waits=0
+    local timeout_seconds=300  # 5 minute timeout per process
+    
+    for pid in "${pids[@]}"; do
         if [[ -n "$pid" ]]; then
-            wait "$pid"
+            debug_message "Waiting for process $pid (${wait_count}/$actual_pid_count)"
+            
+            # Wait with timeout to prevent hanging
+            local wait_start=$(date +%s)
+            while kill -0 "$pid" 2>/dev/null; do
+                local current_time=$(date +%s)
+                local elapsed=$((current_time - wait_start))
+                
+                if [[ $elapsed -gt $timeout_seconds ]]; then
+                    warn_message "Timeout waiting for process $pid after ${timeout_seconds}s, terminating"
+                    kill -TERM "$pid" 2>/dev/null || true
+                    sleep 2
+                    kill -KILL "$pid" 2>/dev/null || true
+                    ((failed_waits++))
+                    break
+                fi
+                
+                sleep 0.1
+            done
+            
+            # Final wait to collect exit status
+            if kill -0 "$pid" 2>/dev/null; then
+                # Process still running after timeout
+                debug_message "Process $pid was terminated due to timeout"
+            else
+                # Process completed normally, wait for exit status
+                wait "$pid" 2>/dev/null || {
+                    debug_message "Process $pid completed with non-zero exit status"
+                }
+            fi
+            
             ((wait_count++))
         fi
-    done < <(safe_array_iterate "pids")
+    done
+    
+    if [[ $failed_waits -gt 0 ]]; then
+        warn_message "⚠️  $failed_waits background processes failed or timed out"
+    fi
     
     # Clean up temporary result files
     debug_message "Cleaning up temporary result files"
