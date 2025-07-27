@@ -903,7 +903,9 @@ cleanup_known_hosts() {
                     
                     # Add potential FQDNs
                     ips_and_hosts+=(
-                        "$instance.rsx"
+                        "$instance.cmd"
+                        "$instance.dev"
+                        "$instance.prod"
                         "$instance.recoverysky.dev"
                         "$instance-$env.recoverysky.dev"
                         "$instance.$env.recoverysky.dev"
