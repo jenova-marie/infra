@@ -6,6 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.31] - 2025-01-21 - Environment Rename: command → cmd 🏷️✨
+
+### 🏷️ **INFRASTRUCTURE UPDATE: Environment Naming Consistency**
+
+#### **Problem Solved**
+- **Inconsistent environment naming**: Directory renamed from `command` to `cmd` but hardcoded references remained
+- **Operational path errors**: Scripts and configurations referencing old `command` paths
+- **Documentation inconsistency**: Comments and configurations using outdated environment name
+
+#### **Solution: Updated Operational References**
+```bash
+# Fixed hardcoded paths
+src/live/command/Queen/cloud-init.yml  → src/live/cmd/Queen/cloud-init.yml
+
+# Updated dependency paths in terragrunt
+../../command/peering-dev             → ../../cmd/peering-dev  
+../../command/peering-prod            → ../../cmd/peering-prod
+
+# Updated environment configuration
+environment: command                  → environment: cmd
+```
+
+#### **Infrastructure Stability** ✅
+- **AWS resource names preserved**: VPC names (`command-vpc`), peering connections (`command-to-dev`), and security groups remain unchanged to prevent infrastructure recreation
+- **Zero downtime**: No actual AWS resources affected, only operational references updated
+- **Backward compatible**: Existing infrastructure continues working unchanged
+
+#### **Updated Files**
+- **[`test-schema-check.sh`](../recoverysky-iac/test-schema-check.sh)** - Fixed hardcoded path reference
+- **[`src/live/_base/vpc_routes/terragrunt.hcl`](../recoverysky-iac/src/live/_base/vpc_routes/terragrunt.hcl)** - Updated dependency paths and comments
+- **[`src/live/cmd/peering-*/`](../recoverysky-iac/src/live/cmd/)** - Updated environment configuration and documentation
+- **[`src/live/cmd/vpc_routes/routes.yml`](../recoverysky-iac/src/live/cmd/vpc_routes/routes.yml)** - Updated configuration comments
+- **[`src/live/cmd/vpcs/networks/vpc.yaml`](../recoverysky-iac/src/live/cmd/vpcs/networks/vpc.yaml)** - Updated configuration comments
+
+#### **Verification** ✅
+```bash
+$ ./infra status cmd
+✅ Environment: cmd
+✅ Target: cmd  
+✅ All operations working correctly
+```
+
+#### **Benefits**
+- ✅ **Consistent naming**: All operational references now use `cmd` environment name
+- ✅ **No infrastructure disruption**: AWS resource names preserved for stability
+- ✅ **Updated documentation**: Comments and configurations reflect current structure
+- ✅ **Improved maintainability**: Clear separation between operational names and AWS resource names
+
+---
+
 ## [2.0.30] - 2025-01-14 - Critical Security & Reliability Fixes: Output System 🔒✨
 
 ### 🔒 **SECURITY FIX: Directory Traversal Vulnerability in Output Generation**
