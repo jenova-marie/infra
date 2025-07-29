@@ -1,0 +1,17 @@
+sync:
+  defaults:
+    ignore:
+      vcs: true
+      paths:
+        - node_modules/
+        - .git/
+        - .DS_Store
+        - .env
+        - dist/
+        - build/
+        - coverage/
+        - tmp/
+        - .cache/
+        - target/            # rust
+        - vendor/            # go vendoring
+        - *.log
