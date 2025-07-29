@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.32] - 2025-01-21 - Clean Operation Enhancement: Default Output Cleaning 🧹✨
+
+### 🧹 **CLEAN OPERATION: Improved Default Behavior**
+
+#### **Problem Solved**
+- **Inconsistent clean behavior**: `infra clean` only removed cache files by default, requiring `--outputs` flag for output files
+- **User expectation mismatch**: Users expected clean operations to remove all generated artifacts including outputs
+- **Hidden output files**: `output.json` files and `outputs/` directories remained after clean operations
+
+#### **Solution: Default Output Cleaning**
+```bash
+# OLD BEHAVIOR (confusing)
+./infra clean dev:all              # Only cleaned cache files
+./infra clean dev:all --outputs    # Required flag to clean outputs
+
+# NEW BEHAVIOR (intuitive)
+./infra clean dev:all              # Cleans cache AND outputs by default
+./infra clean dev:all --no-outputs # Preserves outputs if needed
+```
+
+#### **Updated Files**
+- **[`cache.sh`](./cache.sh)** - Modified to clean outputs by default
+- **[`args.sh`](./args.sh)** - Added `--no-outputs` flag, updated `is_outputs()` logic
+- **[`args.sh`](./args.sh)** - Updated help documentation to reflect new behavior
+
+#### **Benefits**
+- ✅ **Intuitive behavior**: Clean operations now clean all generated artifacts by default
+- ✅ **Preservation option**: `--no-outputs` flag allows preserving outputs when needed
+- ✅ **Consistent with user expectations**: Matches typical "clean" operation behavior
+- ✅ **Better troubleshooting**: Complete cleanup for fresh starts and debugging
+
+#### **Verification** ✅
+```bash
+$ ./infra clean cmd --dry-run
+✅ Shows outputs/ directory removal
+✅ Shows output.json file removal per module
+
+$ ./infra clean cmd --no-outputs --dry-run  
+✅ Preserves outputs/ directory
+✅ Preserves output.json files
+```
+
+---
+
 ## [2.0.31] - 2025-01-21 - Environment Rename: command → cmd 🏷️✨
 
 ### 🏷️ **INFRASTRUCTURE UPDATE: Environment Naming Consistency**
