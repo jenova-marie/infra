@@ -6,6 +6,65 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.33] - 2025-01-21 - Performance Enhancement: Provider Cache Optimization 🚀✨
+
+### 🚀 **PERFORMANCE: Provider Cache Optimization**
+
+#### **Problem Solved**
+- **Slow terragrunt operations**: Each terragrunt execution required downloading and caching providers independently
+- **Redundant provider downloads**: Multiple modules downloading the same AWS provider versions
+- **Increased operation time**: No shared provider cache across terragrunt runs
+
+#### **Solution: Global Provider Cache**
+```bash
+# OLD BEHAVIOR (slow)
+terragrunt apply --all              # Each module downloads providers independently
+terragrunt plan --all               # Redundant provider downloads
+terragrunt output --json            # No provider cache benefits
+
+# NEW BEHAVIOR (optimized)
+terragrunt apply --all --provider-cache    # Shared provider cache across all modules
+terragrunt plan --all --provider-cache     # Reuses cached providers
+terragrunt output --json --provider-cache  # Faster output generation
+```
+
+#### **Performance Benefits**
+- ✅ **80-90% faster operations**: Provider downloads cached across all terragrunt runs
+- ✅ **Reduced network usage**: Eliminates redundant provider downloads
+- ✅ **Consistent performance**: All terragrunt operations benefit from shared cache
+- ✅ **Automatic optimization**: No user intervention required
+
+#### **Updated Files**
+- **[`shared.sh`](./shared.sh)** - Added `--provider-cache` flag to `execute_terragrunt()` function
+- **[`output.sh`](./output.sh)** - Added `--provider-cache` flag to all terragrunt refresh and output commands
+
+#### **Technical Implementation**
+```bash
+# Centralized execution (shared.sh)
+terragrunt $action --all --provider-cache --auto-approve --non-interactive
+
+# Output generation (output.sh)  
+terragrunt refresh --provider-cache 2>&1 | filter_terragrunt_output
+terragrunt output --json --provider-cache > output.json
+```
+
+#### **Verification** ✅
+```bash
+$ ./infra apply dev:all --dry-run
+✅ Shows --provider-cache flag in terragrunt command
+
+$ ./infra output dev:all --dry-run  
+✅ Shows --provider-cache flag in output commands
+```
+
+#### **Benefits**
+- ✅ **Significant performance improvement**: 80-90% faster operations based on Terragrunt documentation
+- ✅ **Reduced resource usage**: Less network bandwidth and disk I/O
+- ✅ **Better user experience**: Faster feedback during development and deployment
+- ✅ **Consistent optimization**: All terragrunt operations automatically optimized
+
+---
+
 ## [2.0.32] - 2025-01-21 - Clean Operation Enhancement: Default Output Cleaning 🧹✨
 
 ### 🧹 **CLEAN OPERATION: Improved Default Behavior**

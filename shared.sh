@@ -612,6 +612,10 @@ execute_terragrunt() {
             ;;
     esac
     
+    # Always add provider cache flag for performance optimization
+    full_command+=" --provider-cache"
+    debug_message "Added provider-cache flag for performance optimization"
+    
     # Always add non-interactive flag to prevent prompts
     full_command+=" --non-interactive"
     

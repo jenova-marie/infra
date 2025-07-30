@@ -65,7 +65,7 @@ generate_module_outputs() {
         
         # Use a temporary approach to capture both the output and exit code
         set +e  # Temporarily disable exit on error
-        terragrunt refresh 2>&1 | filter_terragrunt_output
+        terragrunt refresh --provider-cache 2>&1 | filter_terragrunt_output
         local refresh_exit_code=${PIPESTATUS[0]}
         set -e  # Re-enable exit on error
         
@@ -81,7 +81,7 @@ generate_module_outputs() {
     local success=true
     
     # Build terragrunt output command with endpoint flags if needed
-    local output_command="terragrunt output --json"
+    local output_command="terragrunt output --json --provider-cache"
     
     # Set environment variables for endpoint module if needed
     if [[ "$module" == "endpoints" ]]; then
@@ -196,7 +196,7 @@ generate_module_outputs_bg() {
         
         # Use a temporary approach to capture both the output and exit code
         set +e  # Temporarily disable exit on error
-        terragrunt refresh 2>&1 | filter_terragrunt_output
+        terragrunt refresh --provider-cache 2>&1 | filter_terragrunt_output
         local refresh_exit_code=${PIPESTATUS[0]}
         set -e  # Re-enable exit on error
         
@@ -212,7 +212,7 @@ generate_module_outputs_bg() {
     local success=true
     
     # Build terragrunt output command with endpoint flags if needed
-    local output_command="terragrunt output --json"
+    local output_command="terragrunt output --json --provider-cache"
     
     # Add endpoint flags for endpoints module (same logic as execute_terragrunt)
     if [[ "$module" == "endpoints" ]]; then
