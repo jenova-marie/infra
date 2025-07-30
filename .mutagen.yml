@@ -5,7 +5,6 @@ sync:
       paths:
         - node_modules/
         - .git/
-        - .DS_Store
         - .env
         - dist/
         - build/
@@ -14,4 +13,8 @@ sync:
         - .cache/
         - target/            # rust
         - vendor/            # go vendoring
-        - *.log
+        - .mutagen-session
+        - **/*.log
+        - **/.DS_Store          # Recursive .DS_Store files
+        - ._*                   # macOS resource fork files
+        - **/._*                # Recursive resource fork files
