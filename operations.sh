@@ -46,6 +46,9 @@ execute_operation() {
         "query")
             execute_query_operation
             ;;
+        "list")
+            execute_list_operation
+            ;;
         *)
             handle_error "Unsupported operation: $ACTION"
             ;;
@@ -57,6 +60,67 @@ execute_query_operation() {
     debug_message "Executing query operation"
     # Source the query module and run its main logic
     source "$SCRIPT_DIR/query.sh"
+}
+
+# Add the list operation executor
+execute_list_operation() {
+    debug_message "Executing list operation"
+    
+    # Get operation context for environment
+    get_operation_context
+    
+    debug_message "Listing modules for environment: $OP_ENV"
+    
+    # Get the modules.yml file path for the environment
+    local modules_file="$(get_environment_path "$OP_ENV")/modules.yml"
+    
+    if [[ ! -f "$modules_file" ]]; then
+        handle_error "Modules file not found: $modules_file"
+    fi
+    
+    info_message "📋 Modules in environment: $OP_ENV"
+    info_message "═══════════════════════════════════════════════════════════════════════════"
+    
+    # Parse and display infrastructure modules
+    local infrastructure_modules=()
+    while IFS= read -r module; do
+        [[ -n "$module" ]] && infrastructure_modules+=("$module")
+    done < <(get_infrastructure_modules)
+    
+    if [[ ${#infrastructure_modules[@]} -gt 0 ]]; then
+        info_message "🏗️  Infrastructure Modules:"
+        for module in "${infrastructure_modules[@]}"; do
+            local protection_status=""
+            if is_module_protected "$module"; then
+                protection_status=" 🔒"
+            fi
+            info_message "   • $module$protection_status"
+        done
+        echo ""
+    fi
+    
+    # Parse and display instance modules
+    local instance_modules=()
+    while IFS= read -r module; do
+        [[ -n "$module" ]] && instance_modules+=("$module")
+    done < <(get_instance_modules)
+    
+    if [[ ${#instance_modules[@]} -gt 0 ]]; then
+        info_message "🖥️  Instance Modules:"
+        for module in "${instance_modules[@]}"; do
+            local protection_status=""
+            if is_module_protected "$module"; then
+                protection_status=" 🔒"
+            fi
+            info_message "   • $module$protection_status"
+        done
+        echo ""
+    fi
+    
+    # Show total count
+    local total_modules=$((${#infrastructure_modules[@]} + ${#instance_modules[@]}))
+    info_message "📊 Total: $total_modules module(s)"
+    info_message "═══════════════════════════════════════════════════════════════════════════"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

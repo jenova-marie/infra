@@ -132,7 +132,7 @@ environment: command                  → environment: cmd
 ```
 
 #### **Infrastructure Stability** ✅
-- **AWS resource names preserved**: VPC names (`command-vpc`), peering connections (`command-to-dev`), and security groups remain unchanged to prevent infrastructure recreation
+- **AWS resource names preserved**: VPC names (`cmd-vpc`), peering connections (`command-to-dev`), and security groups remain unchanged to prevent infrastructure recreation
 - **Zero downtime**: No actual AWS resources affected, only operational references updated
 - **Backward compatible**: Existing infrastructure continues working unchanged
 
