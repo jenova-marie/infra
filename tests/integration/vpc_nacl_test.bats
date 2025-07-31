@@ -222,7 +222,7 @@ module "test_vpc" {
             rule_number = 100
             rule_action = "allow"
             protocol    = "tcp"
-            cidr_block  = "10.99.0.0/24"
+            cidr_block  = "10.10.0.0/24"
             from_port   = 22
             to_port     = 22
           }
