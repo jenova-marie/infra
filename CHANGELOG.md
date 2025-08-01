@@ -6,6 +6,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.35] - 2025-01-21 - Feature Implementation: Clean Operation Module 🧹✨
+
+### 🧹 **FEATURE: Comprehensive Clean Operation**
+
+#### **Problem Solved**
+- **Missing clean functionality**: The `infra clean` action existed but was not implemented, leading to unknown behavior
+- **Inconsistent cache management**: No standardized way to clean terraform and terragrunt cache files
+- **Output file management**: No control over whether JSON output files should be preserved or cleaned during operations
+
+#### **Solution: Dedicated Clean Module**
+```bash
+# OLD BEHAVIOR (undefined)
+infra clean dev:all                 # Referenced but not implemented
+
+# NEW BEHAVIOR (fully implemented)
+infra clean dev:all                 # Cleans cache/terraform files, preserves outputs
+infra clean dev:all --outputs       # Cleans cache/terraform files AND output files
+```
+
+#### **Changes Made**
+- **Created clean.sh module**: Complete implementation following existing architecture patterns
+- **KISS approach**: JSON files NOT deleted by default - only when --outputs flag is used
+- **Comprehensive cleaning**: Handles cache, terraform state, logs, and optionally output files
+- **Target-based cleaning**: Supports all existing target types (all, infrastructure, instances, specific modules)
+
+#### **Updated Files**
+- **[`clean.sh`](./clean.sh)** - New module implementing all clean functionality
+- **[`infra`](./infra)** - Added clean.sh to module loading sequence
+- **[`args.sh`](./args.sh)** - Updated --outputs flag behavior and help text
+
+#### **Technical Implementation**
+```bash
+# Clean operation structure
+execute_clean_operation()
+├── clean_global_environment_files()
+│   ├── clean_environment_terraform_files()
+│   ├── clean_environment_logs()
+│   └── clean_environment_outputs() # Only if --outputs flag
+└── clean_module_files() for each target module
+    ├── Always clean: .terragrunt-cache, .terraform, .terraform.lock.hcl
+    └── Conditionally clean: output.json # Only if --outputs flag
+```
+
+#### **Flag Behavior Changes**
+```bash
+# Before: --outputs and --no-outputs flags with confusing defaults
+is_outputs() { [[ "${NO_OUTPUTS:-false}" != "true" ]] }  # Default: clean outputs
+
+# After: Simplified --outputs flag with clear default
+is_outputs() { [[ "${OUTPUTS:-false}" == "true" ]] }     # Default: preserve outputs
+```
+
+#### **Benefits**
+- ✅ **Fully functional clean operation**: No more undefined behavior
+- ✅ **Safe defaults**: JSON output files preserved unless explicitly requested
+- ✅ **Comprehensive cleanup**: Cache, terraform state, and logs always cleaned
+- ✅ **Follows existing patterns**: Uses same architecture as other modules
+- ✅ **Target flexibility**: Works with all existing targeting methods
+
+#### **Verification** ✅
+```bash
+$ ./infra clean dev:all
+✅ Cleans cache/terraform files, preserves outputs
+
+$ ./infra clean dev:all --outputs  
+✅ Cleans cache/terraform files AND output files
+
+$ ./infra clean dev:infrastructure --dry-run
+✅ Shows exactly what would be cleaned without executing
+```
+
+---
+
 ## [2.0.34] - 2025-01-21 - Reliability Enhancement: Sequential Output Processing 🎯✨
 
 ### 🎯 **RELIABILITY: Sequential-Only Output Processing**

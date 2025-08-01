@@ -237,16 +237,6 @@ parse_standard_operation_args() {
                 debug_message "Outputs removal flag enabled - will remove output files during clean operations"
                 shift
                 ;;
-            "--no-outputs")
-                NO_OUTPUTS=true
-                debug_message "Outputs preservation flag enabled - will preserve output files during clean operations"
-                shift
-                ;;
-            "--no-outputs")
-                NO_OUTPUTS=true
-                debug_message "Outputs preservation flag enabled - will preserve output files during clean operations"
-                shift
-                ;;
             *)
                 handle_error "Unknown flag for $ACTION operation: $1"
                 return 1
@@ -1003,11 +993,11 @@ is_vpcs() {
     [[ "$VPCS" == true ]]
 }
 
-# Check if outputs should be cleaned (default: true, unless --no-outputs is used)
+# Check if outputs should be cleaned (default: false, unless --outputs is used)
 # Usage: is_outputs
 is_outputs() {
-    # Default behavior: clean outputs unless --no-outputs is explicitly set
-    [[ "${NO_OUTPUTS:-false}" != "true" ]]
+    # Default behavior: preserve outputs unless --outputs is explicitly set
+    [[ "${OUTPUTS:-false}" == "true" ]]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1925,8 +1915,8 @@ EOF
 ═══════════════════════════════════════════════════════════════════════════
 
 PURPOSE:
-  Removes .terragrunt-cache, .terraform files, and output files by default.
-  Use --no-outputs flag to preserve output files and logs.
+  Removes .terragrunt-cache, .terraform files, and logs by default.
+  Use --outputs flag to also remove output files.
   KISS approach for selective cleanup based on target scope and flags.
 
 USAGE:
@@ -1939,7 +1929,7 @@ WHAT GETS CLEANED (Module Level - Always):
   • terraform.tfstate     - Local terraform state files
   • terraform.tfstate.backup - Local terraform state backup files
 
-WHAT GETS CLEANED (Module Level - Always):
+WHAT GETS CLEANED (Module Level - With --outputs flag):
   • output.json           - Generated output files
 
 WHAT GETS CLEANED (Environment Level - Always):
@@ -1947,7 +1937,7 @@ WHAT GETS CLEANED (Environment Level - Always):
   • <env>/.terraform*     - Environment-level terraform files
   • <env>/terraform.tfstate* - Environment-level terraform state files
 
-WHAT GETS CLEANED (Environment Level - Always):
+WHAT GETS CLEANED (Environment Level - With --outputs flag):
   • <env>/outputs/        - All consolidated outputs
 
 TARGET-BASED CLEANING:
@@ -1966,20 +1956,20 @@ WHEN TO USE CLEAN:
   • Troubleshooting
 
 FLAGS:
-  --no-outputs         Preserve output files and logs (default: clean them)
-                       • Keeps output.json files in modules
-                       • Keeps <env>/outputs/ directory
-                       • Use this flag to preserve outputs during cleanup
+  --outputs            Remove output files and consolidated outputs (default: preserve them)
+                       • Removes output.json files in modules
+                       • Removes <env>/outputs/ directory
+                       • Use this flag to clean outputs during cleanup
   --dry-run            Preview what would be cleaned
   --verbose [0|1]      Show detailed cleaning process
   --no-color           Plain text output
 
 EXAMPLES:
-  # Clean everything in dev environment (including outputs)
+  # Clean everything in dev environment (preserving outputs)
   ./infra clean dev:all
   
-  # Clean everything but preserve output files
-  ./infra clean dev:all --no-outputs
+  # Clean everything including output files
+  ./infra clean dev:all --outputs
   
   # Clean infrastructure modules only
   ./infra clean dev:infrastructure
@@ -1987,8 +1977,11 @@ EXAMPLES:
   # Clean instance modules only
   ./infra clean dev:instances
   
-  # Clean single module (including outputs)
+  # Clean single module (preserving outputs)
   ./infra clean dev:athena
+  
+  # Clean single module including outputs
+  ./infra clean dev:athena --outputs
   
   # Preview cleaning with dry-run
   ./infra clean dev:all --dry-run
