@@ -136,139 +136,143 @@ generate_module_outputs() {
     return $([ "$success" = true ] && echo 0 || echo 1)
 }
 
-# Generate outputs for a single module (background-safe version)
-# Usage: generate_module_outputs_bg "athena" "result_file"
-generate_module_outputs_bg() {
-    local module="$1"
-    local result_file="$2"
-    
-    # Use KISS approach - get operation context for consistent environment access
-    get_operation_context
-    
-    debug_message "Generating outputs for module (background): $module"
-    
-    # Store original directory and make result_file absolute to prevent module directory pollution
-    local original_dir=$(pwd)
-    local absolute_result_file="$original_dir/$result_file"
-    
-    # Validate module name for security (prevent directory traversal)
-    if [[ ! "$module" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        handle_error "Invalid module name format: $module. Module names must contain only alphanumeric characters, hyphens, and underscores"
-        echo "FAIL" > "$absolute_result_file"
-        return 1
-    fi
-    
-    # Additional security check - no path traversal characters
-    if [[ "$module" == *".."* || "$module" == *"/"* || "$module" == *"\\"* ]]; then
-        handle_error "Security violation: Module name contains path traversal characters: $module"
-        echo "FAIL" > "$absolute_result_file"
-        return 1
-    fi
-    
-    # Verify module is enabled/valid before proceeding
-    if ! is_module_enabled "$module"; then
-        debug_message "Module is not enabled or does not exist in modules.yml: $module"
-        echo "FAIL" > "$absolute_result_file"
-        return 1
-    fi
-    
-    # Construct secure module path using validated components
-    local module_path
-    module_path="$(get_module_path "$OP_ENV" "$module")"
-    
-    # Check if module directory exists
-    if [[ ! -d "$module_path" ]]; then
-        debug_message "Module directory not found: $module_path"
-        echo "FAIL" > "$absolute_result_file"
-        return 1
-    fi
-    
-    # Change to module directory using secure absolute path
-    if ! cd "$module_path" 2>/dev/null; then
-        handle_error "Failed to change to module directory: $module_path"
-        echo "FAIL" > "$absolute_result_file"
-        return 1
-    fi
-    
-    # Perform refresh if requested
-    if is_refresh; then
-        debug_message "Executing terragrunt refresh for module (background): $module"
-        
-        # Use a temporary approach to capture both the output and exit code
-        set +e  # Temporarily disable exit on error
-        terragrunt refresh --provider-cache 2>&1 | filter_terragrunt_output
-        local refresh_exit_code=${PIPESTATUS[0]}
-        set -e  # Re-enable exit on error
-        
-        if [[ $refresh_exit_code -ne 0 ]]; then
-            debug_message "Terragrunt refresh failed for module (background): $module - continuing with output generation"
-        else
-            debug_message "Terragrunt refresh completed successfully for module (background): $module"
-        fi
-    fi
-    
-    # Generate outputs using simple terragrunt redirect (cleanest approach)
-    local output_file="output.json"
-    local success=true
-    
-    # Build terragrunt output command with endpoint flags if needed
-    local output_command="terragrunt output --json --provider-cache"
-    
-    # Add endpoint flags for endpoints module (same logic as execute_terragrunt)
-    if [[ "$module" == "endpoints" ]]; then
-        # Set environment variables that terragrunt can access
-        if is_ssm; then
-            export TG_VAR_ssm=true
-            debug_message "Set environment variable for output: TG_VAR_ssm=true"
-        else
-            export TG_VAR_ssm=false
-            debug_message "Set environment variable for output: TG_VAR_ssm=false"
-        fi
-        if is_ecr; then
-            export TG_VAR_ecr=true
-            debug_message "Set environment variable for output: TG_VAR_ecr=true"
-        else
-            export TG_VAR_ecr=false
-            debug_message "Set environment variable for output: TG_VAR_ecr=false"
-        fi
-    fi
-    
-    debug_message "Generating outputs (background): $output_command > $output_file"
-        
-    # Use simple redirect - terragrunt sends JSON to stdout and logs to stderr
-    if $output_command > "$output_file" 2>/dev/null; then
-        # Check if the output file was created and has content (using KISS utility)
-        if file_exists_and_has_content "$output_file"; then
-            debug_message "Outputs generated successfully for module (background): $module"
-            
-            # Copy to centralized location (using KISS variable)
-            copy_module_outputs_to_centralized "$module" "$OP_ENV"
-            echo "SUCCESS" > "$absolute_result_file"
-        else
-            debug_message "No outputs available for module (background): $module (creating empty JSON for automation)"
-            # Create empty JSON object for automation consistency instead of deleting
-            echo "{}" > "$output_file"
-            
-            # Copy to centralized location (empty JSON is still valid)
-            copy_module_outputs_to_centralized "$module" "$OP_ENV"
-            echo "SUCCESS" > "$absolute_result_file"
-        fi
-    else
-        debug_message "Terragrunt output command failed for module (background): $module (creating empty JSON for automation)"
-        # Create empty JSON object even on failure for automation consistency
-        echo "{}" > "$output_file"
-        
-        # Copy to centralized location (empty JSON indicates no resources)
-        copy_module_outputs_to_centralized "$module" "$OP_ENV"
-        echo "SUCCESS" > "$absolute_result_file"
-        success=false
-    fi
-    
-    # Return to original directory
-    cd "$original_dir"
-    
-    return $([ "$success" = true ] && echo 0 || echo 1)
-}
+# COMMENTED OUT: Background processing function - only used by parallel processing
+# This function has been disabled since we're now using sequential processing only.
+# Kept for potential future refactor if parallel processing issues can be resolved.
+#
+# # Generate outputs for a single module (background-safe version)
+# # Usage: generate_module_outputs_bg "athena" "result_file"
+# generate_module_outputs_bg() {
+#     local module="$1"
+#     local result_file="$2"
+#     
+#     # Use KISS approach - get operation context for consistent environment access
+#     get_operation_context
+#     
+#     debug_message "Generating outputs for module (background): $module"
+#     
+#     # Store original directory and make result_file absolute to prevent module directory pollution
+#     local original_dir=$(pwd)
+#     local absolute_result_file="$original_dir/$result_file"
+#     
+#     # Validate module name for security (prevent directory traversal)
+#     if [[ ! "$module" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+#         handle_error "Invalid module name format: $module. Module names must contain only alphanumeric characters, hyphens, and underscores"
+#         echo "FAIL" > "$absolute_result_file"
+#         return 1
+#     fi
+#     
+#     # Additional security check - no path traversal characters
+#     if [[ "$module" == *".."* || "$module" == *"/"* || "$module" == *"\\"* ]]; then
+#         handle_error "Security violation: Module name contains path traversal characters: $module"
+#         echo "FAIL" > "$absolute_result_file"
+#         return 1
+#     fi
+#     
+#     # Verify module is enabled/valid before proceeding
+#     if ! is_module_enabled "$module"; then
+#         debug_message "Module is not enabled or does not exist in modules.yml: $module"
+#         echo "FAIL" > "$absolute_result_file"
+#         return 1
+#     fi
+#     
+#     # Construct secure module path using validated components
+#     local module_path
+#     module_path="$(get_module_path "$OP_ENV" "$module")"
+#     
+#     # Check if module directory exists
+#     if [[ ! -d "$module_path" ]]; then
+#         debug_message "Module directory not found: $module_path"
+#         echo "FAIL" > "$absolute_result_file"
+#         return 1
+#     fi
+#     
+#     # Change to module directory using secure absolute path
+#     if ! cd "$module_path" 2>/dev/null; then
+#         handle_error "Failed to change to module directory: $module_path"
+#         echo "FAIL" > "$absolute_result_file"
+#         return 1
+#     fi
+#     
+#     # Perform refresh if requested
+#     if is_refresh; then
+#         debug_message "Executing terragrunt refresh for module (background): $module"
+#         
+#         # Use a temporary approach to capture both the output and exit code
+#         set +e  # Temporarily disable exit on error
+#         terragrunt refresh --provider-cache 2>&1 | filter_terragrunt_output
+#         local refresh_exit_code=${PIPESTATUS[0]}
+#         set -e  # Re-enable exit on error
+#         
+#         if [[ $refresh_exit_code -ne 0 ]]; then
+#             debug_message "Terragrunt refresh failed for module (background): $module - continuing with output generation"
+#         else
+#             debug_message "Terragrunt refresh completed successfully for module (background): $module"
+#         fi
+#     fi
+#     
+#     # Generate outputs using simple terragrunt redirect (cleanest approach)
+#     local output_file="output.json"
+#     local success=true
+#     
+#     # Build terragrunt output command with endpoint flags if needed
+#     local output_command="terragrunt output --json --provider-cache"
+#     
+#     # Add endpoint flags for endpoints module (same logic as execute_terragrunt)
+#     if [[ "$module" == "endpoints" ]]; then
+#         # Set environment variables that terragrunt can access
+#         if is_ssm; then
+#             export TG_VAR_ssm=true
+#             debug_message "Set environment variable for output: TG_VAR_ssm=true"
+#         else
+#             export TG_VAR_ssm=false
+#             debug_message "Set environment variable for output: TG_VAR_ssm=false"
+#         fi
+#         if is_ecr; then
+#             export TG_VAR_ecr=true
+#             debug_message "Set environment variable for output: TG_VAR_ecr=true"
+#         else
+#             export TG_VAR_ecr=false
+#             debug_message "Set environment variable for output: TG_VAR_ecr=false"
+#         fi
+#     fi
+#     
+#     debug_message "Generating outputs (background): $output_command > $output_file"
+#         
+#     # Use simple redirect - terragrunt sends JSON to stdout and logs to stderr
+#     if $output_command > "$output_file" 2>/dev/null; then
+#         # Check if the output file was created and has content (using KISS utility)
+#         if file_exists_and_has_content "$output_file"; then
+#             debug_message "Outputs generated successfully for module (background): $module"
+#             
+#             # Copy to centralized location (using KISS variable)
+#             copy_module_outputs_to_centralized "$module" "$OP_ENV"
+#             echo "SUCCESS" > "$absolute_result_file"
+#         else
+#             debug_message "No outputs available for module (background): $module (creating empty JSON for automation)"
+#             # Create empty JSON object for automation consistency instead of deleting
+#             echo "{}" > "$output_file"
+#             
+#             # Copy to centralized location (empty JSON is still valid)
+#             copy_module_outputs_to_centralized "$module" "$OP_ENV"
+#             echo "SUCCESS" > "$absolute_result_file"
+#         fi
+#     else
+#         debug_message "Terragrunt output command failed for module (background): $module (creating empty JSON for automation)"
+#         # Create empty JSON object even on failure for automation consistency
+#         echo "{}" > "$output_file"
+#         
+#         # Copy to centralized location (empty JSON indicates no resources)
+#         copy_module_outputs_to_centralized "$module" "$OP_ENV"
+#         echo "SUCCESS" > "$absolute_result_file"
+#         success=false
+#     fi
+#     
+#     # Return to original directory
+#     cd "$original_dir"
+#     
+#     return $([ "$success" = true ] && echo 0 || echo 1)
+# }
 
 # Copy module outputs to centralized location
 # Usage: copy_module_outputs_to_centralized "athena" "dev"
@@ -300,133 +304,137 @@ copy_module_outputs_to_centralized() {
 # Parallel Output Generation Functions
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Generate outputs for multiple modules in parallel
-# Usage: generate_outputs_parallel "module1" "module2" "module3"
-generate_outputs_parallel() {
-    debug_message "Generating outputs in parallel for modules"
-    
-    # Convert arguments to array safely
-    local modules=("$@")
-    
-    if [[ $(safe_array_length "modules") -eq 0 ]]; then
-        debug_message "No modules provided for parallel generation"
-        return 0
-    fi
-    
-    info_message "🚀 Generating outputs for $(safe_array_length "modules") module(s) in parallel..."
-    
-    # Use KISS approach - get operation context for consistent environment access
-    get_operation_context
-    
-    # Track result files for cleanup
-    local result_files=()
-    
-    # Start background processes for each module - USE SAFE ITERATION
-    local pids=()
-    local started_modules=()
-    local expected_process_count=0
-    
-    while IFS= read -r module; do
-        if [[ -n "$module" ]]; then
-            debug_message "Starting parallel output generation for module: $module"
-            
-            # Create unique result file for this module with timestamp to avoid collisions
-            local timestamp=$(date +%s.%N)
-            local result_file="$OP_ENV.$module.$timestamp.result"
-            result_files+=("$result_file")
-            started_modules+=("$module")
-            
-            # Start generation in background and capture PID atomically
-            (
-                if generate_module_outputs_bg "$module" "$result_file"; then
-                    success_message "✅ Generated output for module: $module"
-                else
-                    warn_message "⚠️  Failed to generate output for module: $module"
-                fi
-            ) &
-            
-            # Capture PID immediately and validate it
-            local bg_pid=$!
-            if [[ -n "$bg_pid" ]] && kill -0 "$bg_pid" 2>/dev/null; then
-                pids+=("$bg_pid")
-                ((expected_process_count++))
-                debug_message "Started background process $bg_pid for module: $module"
-            else
-                warn_message "Failed to start background process for module: $module"
-                # Remove the result file since process failed to start
-                rm -f "$result_file" 2>/dev/null || true
-            fi
-        fi
-    done < <(safe_array_iterate "modules")
-    
-    # Validate we started the expected number of processes
-    local actual_pid_count=${#pids[@]}
-    if [[ $actual_pid_count -ne $expected_process_count ]]; then
-        warn_message "PID tracking mismatch: expected $expected_process_count processes, got $actual_pid_count PIDs"
-    fi
-    
-    # Wait for all background processes to complete with timeout protection
-    debug_message "Waiting for $actual_pid_count parallel processes to complete"
-    
-    local wait_count=0
-    local failed_waits=0
-    local timeout_seconds=300  # 5 minute timeout per process
-    
-    for pid in "${pids[@]}"; do
-        if [[ -n "$pid" ]]; then
-            debug_message "Waiting for process $pid (${wait_count}/$actual_pid_count)"
-            
-            # Wait with timeout to prevent hanging
-            local wait_start=$(date +%s)
-            while kill -0 "$pid" 2>/dev/null; do
-                local current_time=$(date +%s)
-                local elapsed=$((current_time - wait_start))
-                
-                if [[ $elapsed -gt $timeout_seconds ]]; then
-                    warn_message "Timeout waiting for process $pid after ${timeout_seconds}s, terminating"
-                    kill -TERM "$pid" 2>/dev/null || true
-                    sleep 2
-                    kill -KILL "$pid" 2>/dev/null || true
-                    ((failed_waits++))
-                    break
-                fi
-                
-                sleep 0.1
-            done
-            
-            # Final wait to collect exit status
-            if kill -0 "$pid" 2>/dev/null; then
-                # Process still running after timeout
-                debug_message "Process $pid was terminated due to timeout"
-            else
-                # Process completed normally, wait for exit status
-                wait "$pid" 2>/dev/null || {
-                    debug_message "Process $pid completed with non-zero exit status"
-                }
-            fi
-            
-            ((wait_count++))
-        fi
-    done
-    
-    if [[ $failed_waits -gt 0 ]]; then
-        warn_message "⚠️  $failed_waits background processes failed or timed out"
-    fi
-    
-    # Clean up temporary result files
-    debug_message "Cleaning up temporary result files"
-    for result_file in "${result_files[@]}"; do
-        if [[ -f "$result_file" ]]; then
-            rm -f "$result_file"
-            debug_message "Removed temporary file: $result_file"
-        fi
-    done
-    
-    # Also clean up any stray result files in module directories (from previous buggy runs)
-    cleanup_stray_result_files $(safe_array_elements "modules")
-    
-    success_message "🎉 Parallel output generation completed for $wait_count module(s)"
-}
+# COMMENTED OUT: Parallel processing function - caused issues with modules not generating outputs
+# This function has been disabled in favor of sequential processing for reliability.
+# Kept for potential future refactor if parallel processing issues can be resolved.
+#
+# # Generate outputs for multiple modules in parallel
+# # Usage: generate_outputs_parallel "module1" "module2" "module3"
+# generate_outputs_parallel() {
+#     debug_message "Generating outputs in parallel for modules"
+#     
+#     # Convert arguments to array safely
+#     local modules=("$@")
+#     
+#     if [[ $(safe_array_length "modules") -eq 0 ]]; then
+#         debug_message "No modules provided for parallel generation"
+#         return 0
+#     fi
+#     
+#     info_message "🚀 Generating outputs for $(safe_array_length "modules") module(s) in parallel..."
+#     
+#     # Use KISS approach - get operation context for consistent environment access
+#     get_operation_context
+#     
+#     # Track result files for cleanup
+#     local result_files=()
+#     
+#     # Start background processes for each module - USE SAFE ITERATION
+#     local pids=()
+#     local started_modules=()
+#     local expected_process_count=0
+#     
+#     while IFS= read -r module; do
+#         if [[ -n "$module" ]]; then
+#             debug_message "Starting parallel output generation for module: $module"
+#             
+#             # Create unique result file for this module with timestamp to avoid collisions
+#             local timestamp=$(date +%s.%N)
+#             local result_file="$OP_ENV.$module.$timestamp.result"
+#             result_files+=("$result_file")
+#             started_modules+=("$module")
+#             
+#             # Start generation in background and capture PID atomically
+#             (
+#                 if generate_module_outputs_bg "$module" "$result_file"; then
+#                     success_message "✅ Generated output for module: $module"
+#                 else
+#                     warn_message "⚠️  Failed to generate output for module: $module"
+#                 fi
+#             ) &
+#             
+#             # Capture PID immediately and validate it
+#             local bg_pid=$!
+#             if [[ -n "$bg_pid" ]] && kill -0 "$bg_pid" 2>/dev/null; then
+#                 pids+=("$bg_pid")
+#                 ((expected_process_count++))
+#                 debug_message "Started background process $bg_pid for module: $module"
+#             else
+#                 warn_message "Failed to start background process for module: $module"
+#                 # Remove the result file since process failed to start
+#                 rm -f "$result_file" 2>/dev/null || true
+#             fi
+#         fi
+#     done < <(safe_array_iterate "modules")
+#     
+#     # Validate we started the expected number of processes
+#     local actual_pid_count=${#pids[@]}
+#     if [[ $actual_pid_count -ne $expected_process_count ]]; then
+#         warn_message "PID tracking mismatch: expected $expected_process_count processes, got $actual_pid_count PIDs"
+#     fi
+#     
+#     # Wait for all background processes to complete with timeout protection
+#     debug_message "Waiting for $actual_pid_count parallel processes to complete"
+#     
+#     local wait_count=0
+#     local failed_waits=0
+#     local timeout_seconds=300  # 5 minute timeout per process
+#     
+#     for pid in "${pids[@]}"; do
+#         if [[ -n "$pid" ]]; then
+#             debug_message "Waiting for process $pid (${wait_count}/$actual_pid_count)"
+#             
+#             # Wait with timeout to prevent hanging
+#             local wait_start=$(date +%s)
+#             while kill -0 "$pid" 2>/dev/null; do
+#                 local current_time=$(date +%s)
+#                 local elapsed=$((current_time - wait_start))
+#                 
+#                 if [[ $elapsed -gt $timeout_seconds ]]; then
+#                     warn_message "Timeout waiting for process $pid after ${timeout_seconds}s, terminating"
+#                     kill -TERM "$pid" 2>/dev/null || true
+#                     sleep 2
+#                     kill -KILL "$pid" 2>/dev/null || true
+#                     ((failed_waits++))
+#                     break
+#                 fi
+#                 
+#                 sleep 0.1
+#             done
+#             
+#             # Final wait to collect exit status
+#             if kill -0 "$pid" 2>/dev/null; then
+#                 # Process still running after timeout
+#                 debug_message "Process $pid was terminated due to timeout"
+#             else
+#                 # Process completed normally, wait for exit status
+#                 wait "$pid" 2>/dev/null || {
+#                     debug_message "Process $pid completed with non-zero exit status"
+#                 }
+#             fi
+#             
+#             ((wait_count++))
+#         fi
+#     done
+#     
+#     if [[ $failed_waits -gt 0 ]]; then
+#         warn_message "⚠️  $failed_waits background processes failed or timed out"
+#     fi
+#     
+#     # Clean up temporary result files
+#     debug_message "Cleaning up temporary result files"
+#     for result_file in "${result_files[@]}"; do
+#         if [[ -f "$result_file" ]]; then
+#             rm -f "$result_file"
+#             debug_message "Removed temporary file: $result_file"
+#         fi
+#     done
+#     
+#     # Also clean up any stray result files in module directories (from previous buggy runs)
+#     cleanup_stray_result_files $(safe_array_elements "modules")
+#     
+#     success_message "🎉 Parallel output generation completed for $wait_count module(s)"
+# }
 
 # Generate outputs for multiple modules sequentially
 # Usage: generate_outputs_sequential "module1" "module2" "module3"
@@ -846,15 +854,23 @@ execute_output_operation() {
         return 1
     fi
     
-    # Choose strategy based on number of modules
-    if [[ $(safe_array_length "modules_to_process") -le 3 ]]; then
-        # Sequential processing for small number of modules
-        info_message "🔄 Generating outputs for $(safe_array_length "modules_to_process") module(s) sequentially..."
-        generate_outputs_sequential $(safe_array_elements "modules_to_process")
-    else
-        # Parallel processing for larger number of modules
-        generate_outputs_parallel $(safe_array_elements "modules_to_process")
-    fi
+    # Always use sequential processing - parallel mode had issues with modules not generating outputs
+    info_message "🔄 Generating outputs for $(safe_array_length "modules_to_process") module(s) sequentially..."
+    generate_outputs_sequential $(safe_array_elements "modules_to_process")
+    
+    # REMOVED: Parallel processing logic that caused output generation issues
+    # The old logic used parallel processing for >3 modules, but this caused problems
+    # where some modules would not generate outputs properly. Sequential is more reliable.
+    #
+    # # Choose strategy based on number of modules
+    # if [[ $(safe_array_length "modules_to_process") -le 3 ]]; then
+    #     # Sequential processing for small number of modules
+    #     info_message "🔄 Generating outputs for $(safe_array_length "modules_to_process") module(s) sequentially..."
+    #     generate_outputs_sequential $(safe_array_elements "modules_to_process")
+    # else
+    #     # Parallel processing for larger number of modules
+    #     generate_outputs_parallel $(safe_array_elements "modules_to_process")
+    # fi
     
     # Generate consolidated IPs file if we have relevant modules (EIPs or instances) - USE SAFE ITERATION
     local needs_ip_consolidation=false
@@ -982,8 +998,8 @@ execute_automatic_output_generation() {
     
     debug_message "Enabled refresh for automatic output generation to ensure fresh state"
     
-    # Generate outputs in parallel for better performance
-    generate_outputs_parallel "${processed_modules[@]}"
+    # Generate outputs sequentially for reliability - parallel mode had issues
+    generate_outputs_sequential "${processed_modules[@]}"
     
     # Generate consolidated IPs file if we have relevant modules (EIPs or instances)
     local needs_ip_consolidation=false
