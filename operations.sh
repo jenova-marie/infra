@@ -381,8 +381,10 @@ execute_volume_operation() {
         local success_message="Volume operation completed successfully"
         success_message "$success_message"
         
-        # Execute all post-operation actions in one call (KISS approach)
-        execute_post_operation_actions "$success_message"
+        # NOTE: Volume operations should NOT clean SSH known_hosts entries
+        # SSH cleaning is only for instance operations (apply/destroy)
+        # Ring completion bell if enabled
+        ring_completion_bell "$success_message"
         
         # Check if we need to regenerate outputs based on volume operation result
         # If volume was already in desired state (attached/detached), skip output generation for efficiency

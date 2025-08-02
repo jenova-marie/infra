@@ -410,33 +410,102 @@ process_volume_attach() {
     
     debug_message "Processing volume attachment: $volume_name to $instance"
     
-    # FAST PATH: Check if already attached using optimized method
-    if is_volume_attached_fast "$env" "$instance" "$volume_name"; then
-        success_message "🚀 Volume $volume_name is already attached to $instance - returning quickly!"
-        return 3  # Special return code for "already attached, no action needed"
+    # Get volumes.yml path for failsafe check
+    local env_path="$(get_environment_path "$env")"
+    local volumes_file="$env_path/$instance/volumes.yml"
+    
+    # FAILSAFE: Check if volumes.yml shows volume as attached but AWS CLI shows it's not
+    if [[ -f "$volumes_file" ]] && yq eval "has(\"$volume_name\")" "$volumes_file" 2>/dev/null | grep -q "true"; then
+        warn_message "⚠️  Volume $volume_name is configured in volumes.yml - verifying actual AWS attachment status"
+        
+        # Get volume ID for AWS CLI verification
+        local volume_id
+        if volume_id=$(get_volume_id "$env" "$volume_name"); then
+            debug_message "Volume ID for $volume_name: $volume_id"
+            
+            # Get instance ID for AWS CLI verification
+            local instance_outputs="$env_path/outputs/$instance.json"
+            if [[ -f "$instance_outputs" ]]; then
+                local instance_id=$(jq -r --arg instance_name "$instance" '.instance_ids.value[$instance_name] // empty' "$instance_outputs" 2>/dev/null)
+                
+                if [[ -n "$instance_id" && "$instance_id" != "null" ]]; then
+                    info_message "🔍 Verifying attachment with AWS CLI for failsafe check..."
+                    
+                    # Capture the return code, not stdout
+                    aws_is_volume_attached "$env" "$volume_id" "$instance_id"
+                    local aws_result=$?
+                    debug_message "AWS CLI verification result: $aws_result"
+                    
+                    case $aws_result in
+                        0)
+                            success_message "✅ Volume $volume_name is configured in volumes.yml AND actually attached in AWS - returning quickly!"
+                            return 3  # Special code: volume already in desired state, no apply needed
+                            ;;
+                        1)
+                            warn_message "🔧 FAILSAFE: Volume $volume_name is in volumes.yml but NOT attached in AWS - will attach it now"
+                            # Continue with attachment process below
+                            ;;
+                        2)
+                            warn_message "⚠️  AWS CLI verification failed - will proceed with attachment to be safe"
+                            # Continue with attachment process below
+                            ;;
+                        *)
+                            warn_message "⚠️  Unexpected AWS CLI result: $aws_result - will proceed with attachment to be safe"
+                            # Continue with attachment process below
+                            ;;
+                    esac
+                else
+                    warn_message "Cannot get instance ID for AWS CLI verification - will proceed with attachment"
+                    # Continue with attachment process below
+                fi
+            else
+                warn_message "Instance outputs not available for verification - will proceed with attachment"
+                # Continue with attachment process below
+            fi
+        else
+            warn_message "Cannot get volume ID for verification - will proceed with attachment"
+            # Continue with attachment process below
+        fi
+    else
+        # FAST PATH: Check if already attached using optimized method (volumes.yml doesn't show it)
+        if is_volume_attached_fast "$env" "$instance" "$volume_name"; then
+            success_message "🚀 Volume $volume_name is already attached to $instance - returning quickly!"
+            return 3  # Special code: volume already in desired state, no apply needed
+        fi
     fi
     
-    # Get volume ID for further processing
-    local volume_id
-    if ! volume_id=$(get_volume_id "$env" "$volume_name"); then
-        return 1
+    # Get volume ID for further processing (might already be set from failsafe check above)
+    if [[ -z "${volume_id:-}" ]]; then
+        if ! volume_id=$(get_volume_id "$env" "$volume_name"); then
+            return 1
+        fi
     fi
     
     debug_message "Volume ID for $volume_name: $volume_id"
     
-    # Get volumes.yml path
-    local env_path="$(get_environment_path "$env")"
-    local volumes_file="$env_path/$instance/volumes.yml"
-    
-    # Get next available device
-    local device_name
-    if ! device_name=$(get_next_device_name "$volumes_file"); then
-        return 1
+    # Get device name - reuse existing if volume is already configured in volumes.yml
+    local device_name=""
+    if [[ -f "$volumes_file" ]] && yq eval "has(\"$volume_name\")" "$volumes_file" 2>/dev/null | grep -q "true"; then
+        # Volume is already configured, get its existing device name
+        device_name=$(yq eval ".\"$volume_name\".device_name" "$volumes_file" 2>/dev/null)
+        if [[ -n "$device_name" && "$device_name" != "null" ]]; then
+            info_message "Reusing existing device assignment: $device_name for volume $volume_name"
+        else
+            warn_message "Volume $volume_name is configured but has no device name - will assign new device"
+            if ! device_name=$(get_next_device_name "$volumes_file"); then
+                return 1
+            fi
+        fi
+    else
+        # Volume not configured, get next available device
+        if ! device_name=$(get_next_device_name "$volumes_file"); then
+            return 1
+        fi
     fi
     
     info_message "Attaching volume $volume_name ($volume_id) to $instance on device $device_name"
     
-    # Update volumes.yml
+    # Update volumes.yml (this will create or update the entry)
     update_volumes_yml_attach "$volumes_file" "$volume_name" "$device_name"
     
     return 0  # Success, proceed with apply
@@ -464,7 +533,7 @@ process_volume_detach() {
         fi
         
         success_message "🚀 Volume $volume_name is already detached from $instance - returning quickly!"
-        return 3  # Special return code for "already detached, no action needed"
+        return 3  # Special code: volume already in desired state, no apply needed
     fi
     
     # Get volume ID for verification
@@ -647,9 +716,9 @@ execute_volume_operation_impl() {
             info_message "Volume already in desired state - outputs will be regenerated for consistency"
             ;;
         3)
-            # Already attached, no action needed
-            info_message "Volume already attached - no action needed"
-            return 0
+            # Volume already in desired state - no apply needed, return success
+            info_message "Volume already in desired state - no action needed"
+            return 0  # Return success to caller
             ;;
     esac
     
@@ -701,7 +770,7 @@ is_volume_attached_fast() {
             ' "$instance_outputs" >/dev/null 2>&1; then
                 
                 # Step 2: Verify with AWS CLI for ultimate accuracy using aws.sh function
-                local instance_id=$(jq -r '.instance_id.value // empty' "$instance_outputs" 2>/dev/null)
+                local instance_id=$(jq -r --arg instance_name "$instance" '.instance_ids.value[$instance_name] // empty' "$instance_outputs" 2>/dev/null)
                 
                 if [[ -n "$instance_id" && "$instance_id" != "null" ]]; then
                     debug_message "Verifying attachment with AWS CLI via aws.sh"
@@ -745,7 +814,7 @@ is_volume_attached_fast() {
     
     # Get instance ID if instance outputs exist
     if [[ -f "$instance_outputs" ]]; then
-        instance_id=$(jq -r '.instance_id.value // empty' "$instance_outputs" 2>/dev/null)
+        instance_id=$(jq -r --arg instance_name "$instance" '.instance_ids.value[$instance_name] // empty' "$instance_outputs" 2>/dev/null)
     fi
     
     # If we have both IDs, check with AWS CLI using aws.sh function

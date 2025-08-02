@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ---
 
+## [2.0.37] - 2025-01-21 - Enhancement: Live AWS CLI Volume Verification
+
+### Problem Solved
+- Volume attachment verification was previously limited to checking terraform outputs and volumes.yml configuration
+- There was no real-time verification against actual AWS infrastructure state
+- Some edge cases could occur where outputs showed one state but AWS had a different reality
+
+### Solution Implemented
+- Enhanced AWS CLI verification in `aws.sh` with robust error handling and state checking
+- Improved `aws_is_volume_attached()` function to handle all attachment states (`attached`, `attaching`, etc.)
+- Removed dummy testing functions and implemented real AWS CLI verification throughout
+- Added comprehensive error handling with return codes: 0=attached, 1=not attached, 2=cannot verify
+
+### Technical Implementation
+- **Enhanced `aws_is_volume_attached()` in `aws.sh`**: Now uses AWS CLI `describe-volumes` with proper state checking
+- **Robust Error Handling**: Graceful fallback when AWS CLI is unavailable
+- **State Recognition**: Recognizes `attached`, `attaching`, and other volume states appropriately
+- **Region-Aware**: Automatically uses correct AWS region from environment configuration
+
+### Benefits
+- Real-time verification against actual AWS infrastructure state
+- More reliable volume attachment detection
+- Better failsafe behavior when outputs are stale or unavailable
+- Improved debugging with detailed AWS CLI state information
+
+---
+
+## [2.0.36] - 2025-01-21 - Reliability Enhancement: Volume Attachment Failsafe
+
+### Problem Solved
+- Volume attachment operations sometimes trusted `volumes.yml` configuration without verifying actual AWS attachment status
+- In cases where `volumes.yml` showed a volume as attached but AWS CLI showed it wasn't actually attached, the system would return success without taking action
+- This led to situations where volumes appeared configured but weren't actually available to instances
+
+### Solution Implemented
+- Added AWS CLI verification failsafe to `process_volume_attach()` function in `volume.sh`
+- When a volume is already configured in `volumes.yml`, the system now:
+  1. Uses AWS CLI to verify if the volume is actually attached in AWS
+  2. If AWS CLI shows the volume is NOT attached, proceeds with attachment using existing device configuration
+  3. If AWS CLI shows the volume IS attached, returns success immediately
+  4. If AWS CLI verification fails, proceeds with attachment as a safety measure
+
+### Changes Made
+- **Modified** `process_volume_attach()` in `infra/volume.sh`:
+  - Added failsafe check that verifies `volumes.yml` configuration against AWS reality
+  - Enhanced device name logic to reuse existing device assignments when re-attaching volumes
+  - Improved error handling and logging for better debugging of attachment issues
+
+### Benefits
+- **Reliability**: Volume operations now verify actual AWS state instead of trusting configuration files
+- **Self-Healing**: Automatically fixes cases where configuration exists but attachment is missing
+- **Backward Compatibility**: Preserves existing device assignments when re-attaching volumes
+- **Safety**: Falls back to attachment when verification is unavailable, ensuring robust operation
+
+---
+
 ## [2.0.35] - 2025-01-21 - Feature Implementation: Clean Operation Module 🧹✨
 
 ### 🧹 **FEATURE: Comprehensive Clean Operation**

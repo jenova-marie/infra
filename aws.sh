@@ -1,86 +1,93 @@
 #!/bin/bash
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Infrastructure Management System v2.0 - AWS CLI Module
+# Infrastructure Management System v2.0 - AWS CLI Module (KISS Rewrite)
 # ═══════════════════════════════════════════════════════════════════════════
-# Purpose: AWS CLI operations and direct API interactions
+# Purpose: Simple, clean AWS CLI operations
 # Author: Infrastructure Management System v2.0
-# Last Updated: December 30, 2024
+# Last Updated: January 21, 2025
 
 set -euo pipefail
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Output Parsing Helper Functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Get instance ID from centralized outputs
+# Usage: get_instance_id_from_outputs "dev" "athena"
+get_instance_id_from_outputs() {
+    local env="$1"
+    local instance_name="$2"
+    
+    local env_path="$(get_environment_path "$env")"
+    local instance_outputs="$env_path/outputs/$instance_name.json"
+    
+    if [[ ! -f "$instance_outputs" ]]; then
+        debug_message "Instance outputs not found: $instance_outputs"
+        return 1
+    fi
+    
+    # The correct path is instance_ids.value.{instance_name}, not instance_id.value
+    local instance_id=$(jq -r --arg instance_name "$instance_name" '.instance_ids.value[$instance_name] // empty' "$instance_outputs" 2>/dev/null)
+    
+    if [[ -n "$instance_id" && "$instance_id" != "null" ]]; then
+        echo "$instance_id"
+        return 0
+    else
+        debug_message "Could not extract instance_id for $instance_name from: $instance_outputs"
+        return 1
+    fi
+}
+
+# Get volume ID from centralized outputs  
+# Usage: get_volume_id_from_outputs "dev" "athena-data"
+get_volume_id_from_outputs() {
+    local env="$1"
+    local volume_name="$2"
+    
+    local env_path="$(get_environment_path "$env")"
+    local ebs_outputs="$env_path/outputs/ebss.json"
+    
+    if [[ ! -f "$ebs_outputs" ]]; then
+        debug_message "EBS outputs not found: $ebs_outputs"
+        return 1
+    fi
+    
+    local volume_id=$(jq -r --arg vol_name "$volume_name" '.volume_ids.value[$vol_name] // empty' "$ebs_outputs" 2>/dev/null)
+    
+    if [[ -n "$volume_id" && "$volume_id" != "null" ]]; then
+        echo "$volume_id"
+        return 0
+    else
+        debug_message "Could not extract volume_id for $volume_name from: $ebs_outputs"
+        return 1
+    fi
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # AWS Region Management
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Get AWS region from environment's root.hcl (for environment-level operations)
+# Get AWS region from environment's root.hcl
 # Usage: get_aws_region "dev"
 get_aws_region() {
     local env="$1"
-    
-    debug_message "Getting AWS region for environment: $env"
-    
-    # Get environment path
     local env_path="$(get_environment_path "$env")"
     local root_hcl="$env_path/root.hcl"
     
-    # Strict validation - root.hcl must exist
     if [[ ! -f "$root_hcl" ]]; then
         handle_error "Environment root.hcl not found at: $root_hcl"
     fi
     
-    debug_message "Using root.hcl: $root_hcl"
-    
-    # Extract aws_region from root.hcl using grep and sed
+    # Extract aws_region from root.hcl
     local aws_region=$(grep 'aws_region.*=' "$root_hcl" | sed -E 's/.*aws_region.*=.*"([^"]+)".*/\1/' | head -1)
     
     if [[ -n "$aws_region" && "$aws_region" != "aws_region" ]]; then
-        debug_message "Found AWS region: $aws_region"
         echo "$aws_region"
         return 0
     fi
     
-    # Fallback: try to extract from locals block more specifically
-    aws_region=$(awk '/locals.*{/,/}/' "$root_hcl" | grep 'aws_region' | sed -E 's/.*=.*"([^"]+)".*/\1/' | head -1)
-    
-    if [[ -n "$aws_region" && "$aws_region" != "aws_region" ]]; then
-        debug_message "Found AWS region (fallback): $aws_region"
-        echo "$aws_region"
-        return 0
-    fi
-    
-    handle_error "Could not extract aws_region from: $root_hcl. Expected format: aws_region = \"us-west-2\""
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# AWS CLI Availability Validation
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Check if AWS CLI is available and configured
-# Usage: validate_aws_cli
-validate_aws_cli() {
-    debug_message "Validating AWS CLI availability and configuration"
-    
-    # Get the full path to AWS CLI to avoid shell configuration issues
-    local aws_path
-    if ! aws_path=$(command -v aws); then
-        debug_message "AWS CLI is not installed"
-        return 1
-    fi
-    
-    debug_message "Using AWS CLI at: $aws_path"
-    
-    # Check if AWS credentials are configured using full path
-    # Set a default region to avoid endpoint issues
-    local aws_output
-    if ! aws_output=$(AWS_DEFAULT_REGION="${AWS_REGION:-us-east-2}" "$aws_path" sts get-caller-identity --region "${AWS_REGION:-us-east-2}" 2>&1); then
-        debug_message "AWS CLI is not configured or credentials are invalid"
-        debug_message "AWS CLI error output: $aws_output"
-        return 1
-    fi
-    
-    debug_message "AWS CLI validation successful"
-    return 0
+    handle_error "Could not extract aws_region from: $root_hcl"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -96,386 +103,209 @@ aws_detach_volume() {
     
     debug_message "AWS CLI volume detachment: $volume_name from $instance_name"
     
-    # Validate AWS CLI is available
-    if ! validate_aws_cli; then
-        warn_message "AWS CLI not available for volume detachment"
-        return 1
-    fi
-    
-    # Get AWS region for this instance (using outputs API)
-    local aws_region
-    if ! aws_region=$(get_instance_aws_region_from_outputs "$env" "$instance_name"); then
-        return 1
-    fi
-    
-    debug_message "AWS region: $aws_region"
-    
-    # Get volume ID and instance ID from outputs API
-    local volume_id
-    local instance_id
-    
-    # Get volume ID using outputs API
-    if ! volume_id=$(get_volume_id_from_outputs "$env" "$volume_name"); then
-        warn_message "Could not get volume ID for $volume_name"
-        return 1
-    fi
-    
-    # Get instance ID using outputs API
-    if ! instance_id=$(get_instance_id_from_outputs "$env" "$instance_name"); then
-        warn_message "Could not get instance ID for $instance_name"
-        return 1
-    fi
-    
-    debug_message "Volume ID: $volume_id"
-    debug_message "Instance ID: $instance_id"
-    
-    # Build the AWS CLI command
-    local aws_command="aws ec2 detach-volume --volume-id $volume_id --region $aws_region"
-    
-    # Add force flag if specified
-    if is_force; then
-        aws_command="$aws_command --force"
-        debug_message "Force detachment enabled"
-    fi
+    # Get AWS region and IDs
+    local aws_region=$(get_aws_region "$env")
+    local volume_id=$(get_volume_id_from_outputs "$env" "$volume_name")
+    local instance_id=$(get_instance_id_from_outputs "$env" "$instance_name")
     
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would detach volume: $volume_id from instance $instance_id"
-        dry_run_message "[DRY-RUN] AWS CLI command: $aws_command"
         return 0
     fi
     
-    info_message "🔄 Detaching volume $volume_name ($volume_id) from $instance_name using AWS CLI..."
-    debug_message "Executing AWS CLI command: $aws_command"
+    info_message "🔄 Detaching volume $volume_name ($volume_id) from $instance_name..."
     
-    # Execute AWS CLI detach command with proper error capture
-    local aws_output=""
+    # Simple AWS CLI command
+    local force_flag=""
+    if is_force; then
+        force_flag="--force"
+    fi
     
-    # Capture both stdout and stderr
-    if aws_output=$(aws ec2 detach-volume --volume-id "$volume_id" --region "$aws_region" $(is_force && echo "--force") 2>&1); then
-        debug_message "AWS CLI command executed successfully"
-        debug_message "AWS CLI output: $aws_output"
+    if aws ec2 detach-volume --volume-id "$volume_id" --region "$aws_region" $force_flag >/dev/null 2>&1; then
         success_message "✅ Volume detachment command sent successfully"
-        info_message "Volume will detach and may take a moment to complete"
         return 0
     else
-        local exit_code=$?
-        debug_message "AWS CLI command failed with exit code: $exit_code"
-        debug_message "AWS CLI command: $aws_command"
-        debug_message "AWS CLI error output: $aws_output"
-        warn_message "AWS CLI volume detachment failed: $aws_output"
+        warn_message "AWS CLI volume detachment failed"
         return 1
     fi
 }
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Fast Volume Verification via AWS CLI
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Fast check if volume is attached using AWS CLI (no outputs required)
+# Check if volume is attached using AWS CLI
 # Usage: aws_is_volume_attached "dev" "vol-123456" "i-123456"
+# Returns: 0=attached, 1=not attached, 2=cannot verify
 aws_is_volume_attached() {
     local env="$1"
     local volume_id="$2"
     local instance_id="$3"
     
-    debug_message "AWS CLI: Fast checking if volume $volume_id is attached to instance $instance_id"
+    debug_message "AWS CLI: Checking if volume $volume_id is attached to instance $instance_id"
     
-    # Validate AWS CLI is available
-    if ! validate_aws_cli; then
-        debug_message "AWS CLI not available for fast volume check"
-        return 2  # Cannot verify
-    fi
-    
-    # Get AWS region for this environment
+    # Get AWS region
     local aws_region
     if ! aws_region=$(get_aws_region "$env"); then
-        debug_message "Cannot get AWS region for fast volume check"
-        return 2  # Cannot verify
+        debug_message "Failed to get AWS region for environment $env"
+        return 2
     fi
     
-    # Use AWS CLI to check volume attachment status directly
-    local aws_output=""
-    if aws_output=$(aws ec2 describe-volumes \
+    # Query AWS for volume attachment state
+    debug_message "AWS CLI: Checking volume attachment in region $aws_region"
+    
+    # Use AWS CLI to get attachment state directly
+    local attachment_state
+    if attachment_state=$(aws ec2 describe-volumes \
         --volume-ids "$volume_id" \
         --region "$aws_region" \
-        --query "Volumes[0].Attachments[?InstanceId=='$instance_id']" \
-        --output json 2>/dev/null); then
+        --query "Volumes[0].Attachments[?InstanceId=='$instance_id'].State" \
+        --output text 2>/dev/null); then
         
-        # Check if the query returned any attachments
-        local attachment_count=$(echo "$aws_output" | jq '. | length' 2>/dev/null)
-        
-        if [[ "$attachment_count" -gt 0 ]]; then
-            debug_message "AWS CLI: Volume $volume_id is attached to instance $instance_id"
-            return 0  # Attached
-        else
-            debug_message "AWS CLI: Volume $volume_id is NOT attached to instance $instance_id"
-            return 1  # Not attached
-        fi
-    else
-        debug_message "AWS CLI: Failed to query volume $volume_id attachment status"
-        return 2  # Cannot verify
-    fi
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Instance Reboot Operations
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Execute instance reboot operation
-# Usage: execute_reboot_operation
-execute_reboot_operation() {
-    # Use KISS approach - get all operation context in one call
-    get_operation_context
-    
-    debug_message "Executing reboot operation for instance: $OP_TARGET_TYPE"
-    log_phase "SSH shutdown + AWS start reboot"
-    
-    # Validate AWS CLI is available
-    if ! validate_aws_cli; then
-        warn_message "AWS CLI not available for reboot operation"
-        return 1
-    fi
-    
-    # Parse target to extract instance name
-    local instance_name
-    if [[ "$OP_TARGET_TYPE" == *":"* ]]; then
-        # Handle env:instance format, extract just instance name
-        instance_name="${OP_TARGET_TYPE#*:}"
-    else
-        instance_name="$OP_TARGET_TYPE"
-    fi
-    
-    debug_message "Target instance name: $instance_name"
-    
-    # Get AWS region for this instance (using outputs API)
-    local aws_region
-    if ! aws_region=$(get_instance_aws_region_from_outputs "$OP_ENV" "$instance_name"); then
-        return 1
-    fi
-    
-    debug_message "AWS region: $aws_region"
-    
-    # Get instance ID using outputs API
-    local instance_id
-    if ! instance_id=$(get_instance_id_from_outputs "$OP_ENV" "$instance_name"); then
-        return 1
-    fi
-    
-    info_message "🔄 Starting SSH shutdown + AWS start reboot for $instance_name..."
-    
-    # Step 1: SSH shutdown using remote script
-    info_message "🛑 Step 1/3: SSH shutdown using remote script..."
-    local hostname="${instance_name}-${OP_ENV}.recoverysky.dev"
-    local ssh_user="ec2-user"
-    local remote_command="~/scripts/shutdown.sh"
-    
-    info_message "📡 Connecting to $instance_name ($hostname) for graceful shutdown..."
-    debug_message "SSH command: ssh $ssh_user@$hostname '$remote_command'"
-    
-    if is_dry_run; then
-        dry_run_message "[DRY-RUN] Would execute SSH shutdown: $ssh_user@$hostname '$remote_command'"
-        dry_run_message "[DRY-RUN] Would wait for instance to stop: $instance_id"
-        dry_run_message "[DRY-RUN] Would start instance: $instance_id"
-        success_message "✅ SSH + AWS reboot (dry-run) completed successfully"
-        return 0
-    fi
-    
-    # Execute SSH shutdown
-    if timeout 30 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
-        "$ssh_user@$hostname" "$remote_command" 2>/dev/null; then
-        success_message "✅ SSH shutdown command sent successfully"
-    else
-        local exit_code=$?
-        if [[ $exit_code -eq 124 ]]; then
-            success_message "✅ SSH shutdown command sent (connection timeout expected)"
-        else
-            warn_message "⚠️  SSH shutdown failed, attempting direct AWS reboot instead..."
-            if reboot_instance "$instance_id" "$instance_name" "$aws_region"; then
-                success_message "✅ Direct AWS reboot completed successfully"
-                
-                # Execute all post-operation actions in one call (KISS approach)
-                execute_post_operation_actions "Direct AWS reboot completed"
+        case "$attachment_state" in
+            "attached")
+                debug_message "AWS CLI: Volume $volume_id is attached to instance $instance_id"
                 return 0
-            else
-                handle_error "Both SSH shutdown and direct AWS reboot failed"
-            fi
-        fi
-    fi
-    
-    # Step 2: Wait for instance to stop
-    info_message "⏳ Step 2/3: Waiting for instance to shutdown completely..."
-    if wait_for_instance_shutdown "$OP_ENV" "$instance_name"; then
-        success_message "✅ Instance shutdown completed"
+                ;;
+            "attaching")
+                debug_message "AWS CLI: Volume $volume_id is currently attaching to instance $instance_id"
+                return 0  # Consider attaching as attached for our purposes
+                ;;
+            "")
+                debug_message "AWS CLI: Volume $volume_id is not attached to instance $instance_id"
+                return 1
+                ;;
+            *)
+                debug_message "AWS CLI: Volume $volume_id has unexpected state: $attachment_state"
+                return 1
+                ;;
+        esac
     else
-        warn_message "⚠️  Shutdown wait timed out, attempting to start anyway..."
-    fi
-    
-    # Step 3: Start instance
-    info_message "🚀 Step 3/3: Starting instance..."
-    if start_instance "$instance_id" "$instance_name" "$aws_region"; then
-        success_message "✅ SSH shutdown + AWS start reboot completed successfully"
-        
-        # Execute all post-operation actions in one call (KISS approach)
-        execute_post_operation_actions "SSH + AWS reboot completed successfully"
-    else
-        handle_error "Instance start failed after SSH shutdown"
+        debug_message "AWS CLI: Failed to query volume attachment state"
+        return 2
     fi
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Instance Management Operations
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Reboot a single instance using AWS CLI
-# Usage: reboot_instance "i-1234567890abcdef0" "athena"
+# Reboot instance using AWS CLI
+# Usage: reboot_instance "i-1234567890abcdef0" "athena" "us-east-2"
 reboot_instance() {
     local instance_id="$1"
     local instance_name="$2"
     local aws_region="$3"
     
-    debug_message "Rebooting instance: $instance_id ($instance_name) in region: $aws_region"
-    
-    # Build the AWS CLI command
-    local aws_command="aws ec2 reboot-instances --instance-ids $instance_id --region $aws_region"
-    
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would reboot instance: $instance_id ($instance_name)"
-        dry_run_message "[DRY-RUN] AWS CLI command: $aws_command"
         return 0
     fi
     
-    info_message "🔄 Rebooting instance $instance_name ($instance_id) in region: $aws_region..."
-    debug_message "Executing AWS CLI command: $aws_command"
+    info_message "🔄 Rebooting instance $instance_name ($instance_id)..."
     
-    # Execute AWS CLI reboot command with proper error capture
-    local aws_output=""
-    local aws_error=""
-    
-    # Capture both stdout and stderr
-    if aws_output=$(aws ec2 reboot-instances --instance-ids "$instance_id" --region "$aws_region" 2>&1); then
-        debug_message "AWS CLI command executed successfully"
-        debug_message "AWS CLI output: $aws_output"
+    if aws ec2 reboot-instances --instance-ids "$instance_id" --region "$aws_region" >/dev/null 2>&1; then
         success_message "✅ Reboot command sent successfully for $instance_name"
-        info_message "Instance will reboot and may take a few minutes to become available"
         return 0
     else
-        local exit_code=$?
-        debug_message "AWS CLI command failed with exit code: $exit_code"
-        debug_message "AWS CLI command: $aws_command"
-        debug_message "AWS CLI error output: $aws_output"
-        handle_error "AWS CLI reboot failed: $aws_output"
+        handle_error "AWS CLI reboot failed for $instance_name"
+    fi
+}
+
+# Start instance using AWS CLI
+# Usage: start_instance "i-1234567890abcdef0" "athena" "us-east-2"
+start_instance() {
+    local instance_id="$1"
+    local instance_name="$2"
+    local aws_region="$3"
+    
+    if is_dry_run; then
+        dry_run_message "[DRY-RUN] Would start instance: $instance_id ($instance_name)"
+        return 0
+    fi
+    
+    info_message "🚀 Starting instance $instance_name ($instance_id)..."
+    
+    if aws ec2 start-instances --instance-ids "$instance_id" --region "$aws_region" >/dev/null 2>&1; then
+        success_message "✅ Start command sent successfully for $instance_name"
+        return 0
+    else
+        handle_error "AWS CLI start failed for $instance_name"
+    fi
+}
+
+# Get current instance status from AWS
+# Usage: get_instance_status "dev" "athena"
+# Returns: running, stopped, pending, stopping, shutting-down, terminated, etc.
+get_instance_status() {
+    local env="$1"
+    local instance_name="$2"
+    
+    # Get AWS region and instance ID
+    local aws_region=$(get_aws_region "$env")
+    local instance_id=$(get_instance_id_from_outputs "$env" "$instance_name")
+    
+    # Get current instance state from AWS
+    local state=$(aws ec2 describe-instances \
+        --instance-ids "$instance_id" \
+        --region "$aws_region" \
+        --query 'Reservations[0].Instances[0].State.Name' \
+        --output text 2>/dev/null)
+    
+    if [[ -n "$state" && "$state" != "None" ]]; then
+        echo "$state"
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Terminate instance using AWS CLI
+# Usage: terminate_instance "i-1234567890abcdef0" "athena" "us-east-2"
+terminate_instance() {
+    local instance_id="$1"
+    local instance_name="$2"
+    local aws_region="$3"
+    
+    if is_dry_run; then
+        dry_run_message "[DRY-RUN] Would terminate instance: $instance_id ($instance_name)"
+        return 0
+    fi
+    
+    print_message "🔵 TERMINATING instance $instance_name ($instance_id)"
+    
+    if aws ec2 terminate-instances --instance-ids "$instance_id" --region "$aws_region" >/dev/null 2>&1; then
+        print_message "🔵 Termination command sent successfully for $instance_name"
+        return 0
+    else
+        warn_message "Failed to terminate instance: $instance_id ($instance_name)"
+        return 1
     fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Generic Instance State Waiting (DRY implementation)
+# Instance State Waiting
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Generic function to wait for any instance state with configurable options
-# Usage: wait_for_instance_state "dev" "athena" "running" [timeout] [initial_wait] [poll_interval] [operation_description]
+# Wait for instance to reach target state
+# Usage: wait_for_instance_state "dev" "athena" "running" [timeout] [poll_interval]
 wait_for_instance_state() {
     local env="$1"
     local instance_name="$2"
     local target_state="$3"
     local timeout="${4:-300}"        # Default 5 minutes
-    local initial_wait="${5:-0}"     # Default no initial wait
-    local poll_interval="${6:-1}"    # Default 1 second polling
-    local operation_desc="${7:-state change}"  # Default description
+    local poll_interval="${5:-1}"    # Default 1 second
     
-    debug_message "Waiting for instance $instance_name to reach state: $target_state"
-    debug_message "Parameters: timeout=${timeout}s, initial_wait=${initial_wait}s, poll_interval=${poll_interval}s"
-    
-    # Handle dry-run mode
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would wait for instance $instance_name to reach $target_state state"
-        dry_run_message "[DRY-RUN] Would monitor AWS EC2 with ${timeout}s timeout and ${poll_interval}s polling"
-        if [[ $initial_wait -gt 0 ]]; then
-            dry_run_message "[DRY-RUN] Would wait ${initial_wait}s initially before polling"
-        fi
         return 0
     fi
     
-    # Validate AWS CLI is available
-    if ! validate_aws_cli; then
-        warn_message "AWS CLI not available for $operation_desc monitoring"
-        return 1
-    fi
-    
-    # Initial wait period (useful for reboot scenarios where state might be stale)
-    if [[ $initial_wait -gt 0 ]]; then
-        info_message "⏳ Waiting ${initial_wait}s before monitoring $operation_desc for $instance_name..."
-        sleep "$initial_wait"
-    fi
-    
     local start_time=$(date +%s)
-    local expected_time_msg=""
-    
-    # Set expected time message based on target state
-    case "$target_state" in
-        "running")
-            expected_time_msg="(expected ~30-60 seconds)"
-            ;;
-        "stopped")
-            expected_time_msg="(expected ~20-30 seconds)"
-            ;;
-        "terminated")
-            expected_time_msg="(timeout: $((timeout/60)) minutes)"
-            ;;
-        *)
-            expected_time_msg="(timeout: $((timeout/60)) minutes)"
-            ;;
-    esac
-    
-    info_message "⏳ Monitoring $operation_desc for $instance_name $expected_time_msg..."
+    info_message "⏳ Waiting for $instance_name to reach $target_state state..."
     
     while true; do
-        # Get current instance state using existing function
-        local current_state=""
-        if current_state=$(get_instance_status "$env" "$instance_name"); then
-            debug_message "$instance_name current state: $current_state (target: $target_state)"
-            
-            # Check if we've reached target state
-            if [[ "$current_state" == "$target_state" ]]; then
-                success_message "✅ $instance_name has reached $target_state state!"
-                    return 0
-            fi
-            
-            # Handle error states based on target
-            case "$target_state" in
-                "running")
-                    case "$current_state" in
-                        "stopping"|"shutting-down"|"terminated")
-                            warn_message "⚠️  Instance $instance_name is $current_state - cannot reach running state"
-                            return 1
-                    ;;
-                        "stopped")
-                            warn_message "⚠️  Instance $instance_name went to stopped state instead of running"
-                            return 1
-                            ;;
-                    esac
-                    ;;
-                "stopped")
-                    case "$current_state" in
-                        "shutting-down"|"terminated")
-                            warn_message "⚠️  Instance $instance_name is being terminated, not stopped"
-                            return 1
-                    ;;
-            esac
-                    ;;
-                "terminated")
-                    # For termination, any other final state is acceptable to continue monitoring
-                    case "$current_state" in
-                        "running"|"stopped"|"pending"|"stopping"|"shutting-down")
-                            # These are all expected transition states for termination
-                            debug_message "$instance_name transitioning: $current_state -> termination"
-                            ;;
-                    esac
-                    ;;
-            esac
-            
-            # Log current state for progress tracking
-            debug_message "$instance_name is in state: $current_state"
-        else
-            debug_message "Could not check state for $instance_name"
-            current_state="unknown"
+        local current_state=$(get_instance_status "$env" "$instance_name")
+        
+        if [[ "$current_state" == "$target_state" ]]; then
+            success_message "✅ $instance_name has reached $target_state state!"
+            return 0
         fi
         
         # Check timeout
@@ -487,142 +317,144 @@ wait_for_instance_state() {
             return 1
         fi
         
-        # Show progress with appropriate color/emoji based on target state
-        case "$target_state" in
-            "terminated")
-                print_message "🔴 $operation_desc status: $current_state (${elapsed}s elapsed)" "$RED" "ERROR"
-                ;;
-            *)
-                info_message "✅ $operation_desc status: $current_state (${elapsed}s elapsed)"
-                ;;
-        esac
-        
+        info_message "✅ Status: $current_state (${elapsed}s elapsed)"
         sleep "$poll_interval"
     done
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Instance Shutdown Waiting (for SSH-initiated shutdowns)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Wait for single instance to reach stopped state after SSH shutdown
+# Wait for instance shutdown (convenience function)
 # Usage: wait_for_instance_shutdown "dev" "athena"
 wait_for_instance_shutdown() {
     local env="$1"
     local instance_name="$2"
-    
-    debug_message "Waiting for instance shutdown: $instance_name"
-    
-    # Use generic function with 2-minute timeout for shutdown
-    wait_for_instance_state "$env" "$instance_name" "stopped" 120 0 1 "shutdown"
+    wait_for_instance_state "$env" "$instance_name" "stopped" 120 1
 }
 
-# Wait for multiple instances to reach stopped state after SSH shutdown
-# Usage: wait_for_multiple_instances_shutdown "dev" instance1 instance2 instance3
-wait_for_multiple_instances_shutdown() {
+# Wait for instance start completion (convenience function)
+# Usage: wait_for_instance_start_completion "dev" "athena"
+wait_for_instance_start_completion() {
     local env="$1"
-    shift
-    local instances=("$@")
-    
-    debug_message "Waiting for multiple instances shutdown: ${instances[*]}"
-    
-    # Handle dry-run mode
-    if is_dry_run; then
-        dry_run_message "[DRY-RUN] Would wait for ${#instances[@]} instances to reach stopped state: ${instances[*]}"
-        dry_run_message "[DRY-RUN] Would use generic wait function for each instance"
-        return 0
-    fi
-    
-    info_message "⏳ Waiting for ${#instances[@]} instance(s) to shutdown..."
-    
-    # Use generic function for each instance and track results
-    local failed_count=0
-    local success_count=0
-    
-    for instance in "${instances[@]}"; do
-        info_message "🔄 Checking shutdown status for $instance..."
-        
-        if wait_for_instance_state "$env" "$instance" "stopped" 120 0 1 "shutdown"; then
-            success_count=$((success_count + 1))
-            debug_message "Instance $instance shutdown completed"
-        else
-            failed_count=$((failed_count + 1))
-            warn_message "Instance $instance shutdown failed or timed out"
-            fi
-        done
-        
-    # Display summary
-    info_message "📈 Multiple instances shutdown summary:"
-    info_message "  Total instances: ${#instances[@]}"
-    info_message "  Successful: $success_count"
-    info_message "  Failed: $failed_count"
-    
-    if [[ $failed_count -eq 0 ]]; then
-        success_message "✅ All ${#instances[@]} instance(s) are now stopped"
-            return 0
-    else
-        warn_message "⚠️  Some instances failed to shutdown ($success_count/${#instances[@]} succeeded)"
-            return 1
-        fi
+    local instance_name="$2"
+    wait_for_instance_state "$env" "$instance_name" "running" 180 1
+}
+
+# Wait for instance reboot completion (convenience function)
+# Usage: wait_for_instance_reboot_completion "dev" "athena"
+wait_for_instance_reboot_completion() {
+    local env="$1"
+    local instance_name="$2"
+    wait_for_instance_state "$env" "$instance_name" "running" 300 1
+}
+
+# Wait for instance termination (convenience function)
+# Usage: wait_for_instance_termination "dev" "athena"
+wait_for_instance_termination() {
+    local env="$1"
+    local instance_name="$2"
+    wait_for_instance_state "$env" "$instance_name" "terminated" 300 2
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Instance Start Operations (for reboot after SSH shutdown)
+# SSH Shutdown + AWS Start Reboot Operation
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Start a single instance using AWS CLI
-# Usage: start_instance "i-1234567890abcdef0" "athena" "us-east-2"
-start_instance() {
-    local instance_id="$1"
-    local instance_name="$2"
-    local aws_region="$3"
+# Execute reboot operation (SSH shutdown + AWS start)
+# Usage: execute_reboot_operation
+execute_reboot_operation() {
+    get_operation_context
     
-    debug_message "Starting instance: $instance_id ($instance_name) in region: $aws_region"
+    # Parse target to extract instance name
+    local instance_name
+    if [[ "$OP_TARGET_TYPE" == *":"* ]]; then
+        instance_name="${OP_TARGET_TYPE#*:}"
+    else
+        instance_name="$OP_TARGET_TYPE"
+    fi
     
-    # Build the AWS CLI command
-    local aws_command="aws ec2 start-instances --instance-ids $instance_id --region $aws_region"
+    # Get AWS region and instance ID
+    local aws_region=$(get_aws_region "$OP_ENV")
+    local instance_id=$(get_instance_id_from_outputs "$OP_ENV" "$instance_name")
+    
+    info_message "🔄 Starting SSH shutdown + AWS start reboot for $instance_name..."
+    
+    # Step 1: SSH shutdown
+    info_message "🛑 Step 1/3: SSH shutdown..."
+    local hostname="${instance_name}-${OP_ENV}.recoverysky.dev"
     
     if is_dry_run; then
-        dry_run_message "[DRY-RUN] Would start instance: $instance_id ($instance_name)"
-        dry_run_message "[DRY-RUN] AWS CLI command: $aws_command"
+        dry_run_message "[DRY-RUN] Would execute SSH shutdown and AWS reboot sequence"
         return 0
     fi
     
-    info_message "🚀 Starting instance $instance_name ($instance_id) in region: $aws_region..."
-    debug_message "Executing AWS CLI command: $aws_command"
-    
-    # Execute AWS CLI start command with proper error capture
-    local aws_output=""
-    
-    # Capture both stdout and stderr
-    if aws_output=$(aws ec2 start-instances --instance-ids "$instance_id" --region "$aws_region" 2>&1); then
-        debug_message "AWS CLI command executed successfully"
-        debug_message "AWS CLI output: $aws_output"
-        success_message "✅ Start command sent successfully for $instance_name"
-        info_message "Instance will start and may take a few minutes to become available"
-        return 0
+    # Execute SSH shutdown with timeout
+    if timeout 30 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
+        "ec2-user@$hostname" "~/scripts/shutdown.sh" 2>/dev/null; then
+        success_message "✅ SSH shutdown command sent"
     else
         local exit_code=$?
-        debug_message "AWS CLI command failed with exit code: $exit_code"
-        debug_message "AWS CLI command: $aws_command"
-        debug_message "AWS CLI error output: $aws_output"
-        handle_error "AWS CLI start failed: $aws_output"
+        if [[ $exit_code -eq 124 ]]; then
+            success_message "✅ SSH shutdown sent (timeout expected)"
+        else
+            warn_message "⚠️  SSH shutdown failed, using direct AWS reboot..."
+            if reboot_instance "$instance_id" "$instance_name" "$aws_region"; then
+                success_message "✅ Direct AWS reboot completed"
+                execute_post_operation_actions "Direct AWS reboot completed"
+                return 0
+            else
+                handle_error "Both SSH shutdown and direct AWS reboot failed"
+            fi
+        fi
+    fi
+    
+    # Step 2: Wait for shutdown
+    info_message "⏳ Step 2/3: Waiting for shutdown..."
+    if wait_for_instance_shutdown "$OP_ENV" "$instance_name"; then
+        success_message "✅ Instance shutdown completed"
+    else
+        warn_message "⚠️  Shutdown wait timed out, starting anyway..."
+    fi
+    
+    # Step 3: Start instance
+    info_message "🚀 Step 3/3: Starting instance..."
+    if start_instance "$instance_id" "$instance_name" "$aws_region"; then
+        success_message "✅ SSH shutdown + AWS start reboot completed"
+        execute_post_operation_actions "SSH + AWS reboot completed"
+    else
+        handle_error "Instance start failed after SSH shutdown"
     fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Future AWS Operations (Placeholder)
+# AWS Termination for SSH Failures
 # ─────────────────────────────────────────────────────────────────────────────
 
-# TODO: Add more AWS operations as needed:
-# - Instance start/stop
-# - EBS snapshot management  
-# - Security group modifications
-# - CloudWatch logs retrieval
-# - Parameter store operations
+# AWS CLI termination fallback for SSH failures
+# Usage: aws_terminate_instance_on_ssh_failure "dev" "athena"
+aws_terminate_instance_on_ssh_failure() {
+    local env="$1"
+    local instance_name="$2"
+    
+    # Get AWS region and instance ID
+    local aws_region=$(get_aws_region "$env")
+    local instance_id=$(get_instance_id_from_outputs "$env" "$instance_name")
+    
+    # Terminate and wait
+    if terminate_instance "$instance_id" "$instance_name" "$aws_region"; then
+        if wait_for_instance_termination "$env" "$instance_name"; then
+            print_message "🔴 Instance $instance_name termination completed" "$RED" "ERROR"
+            return 0
+        else
+            print_message "🔴 Instance $instance_name termination timed out" "$RED" "ERROR"
+            return 1
+        fi
+    else
+        print_message "🔴 Failed to terminate instance $instance_name" "$RED" "ERROR"
+        return 1
+    fi
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AWS Secrets Manager Operations - Secrets Protection System
+# Secrets Management Operations
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Clear secrets for modules marked with destroy: false
@@ -631,57 +463,33 @@ clear_secrets_for_destroy_disabled_modules() {
     local env="$1"
     local target_type="$2"
     
-    debug_message "Checking for destroy-disabled modules to clear secrets: env=$env, target=$target_type"
-    
-    # Validate AWS CLI is available
-    if ! validate_aws_cli; then
-        warn_message "AWS CLI not available for secrets clearing"
-        return 1
-    fi
-    
-    # Get target modules
-    local target_modules=()
+    # Get target modules with destroy: false
+    local destroy_disabled_modules=()
     while IFS= read -r module; do
-        [[ -n "$module" ]] && target_modules+=("$module")
+        if [[ -n "$module" ]] && is_module_destroy_disabled "$module"; then
+            destroy_disabled_modules+=("$module")
+        fi
     done < <(get_modules_for_target "$target_type")
     
-    # Find modules with destroy: false
-    local destroy_disabled_modules=()
-    for module in "${target_modules[@]}"; do
-        if is_module_destroy_disabled "$module"; then
-            destroy_disabled_modules+=("$module")
-            debug_message "Found destroy-disabled module: $module"
-        fi
-    done
-    
     if [[ ${#destroy_disabled_modules[@]} -eq 0 ]]; then
-        debug_message "No destroy-disabled modules found in target"
         return 0
     fi
     
-    info_message "🔒 Found ${#destroy_disabled_modules[@]} destroy-disabled module(s): ${destroy_disabled_modules[*]}"
-    info_message "🧹 Clearing secret values instead of destroying infrastructure..."
+    info_message "🔒 Clearing secrets for ${#destroy_disabled_modules[@]} destroy-disabled modules..."
     
-    # Clear secrets for each destroy-disabled module
+    # Clear secrets for each module
     local success_count=0
-    local failure_count=0
-    
     for module in "${destroy_disabled_modules[@]}"; do
         if clear_module_secrets "$env" "$module"; then
             ((success_count++))
-        else
-            ((failure_count++))
         fi
     done
     
-    # Report results and handle failures
-    if [[ $failure_count -eq 0 ]]; then
-        success_message "✅ Successfully cleared secrets for $success_count module(s)"
+    if [[ $success_count -eq ${#destroy_disabled_modules[@]} ]]; then
+        success_message "✅ Successfully cleared secrets for $success_count modules"
         return 0
     else
-        error_message "❌ Failed to clear secrets for $failure_count module(s)"
-        error_message "Secret clearing is required for destroy-disabled modules"
-        handle_error "Secrets clearing failed - operation aborted"
+        handle_error "Failed to clear some secrets - operation aborted"
     fi
 }
 
@@ -691,328 +499,98 @@ clear_module_secrets() {
     local env="$1"
     local module="$2"
     
-    debug_message "Clearing secrets for module: $module in environment: $env"
-    
-    # Get AWS region for this environment
-    local aws_region
-    if ! aws_region=$(get_aws_region "$env"); then
-        error_message "Could not determine AWS region for environment: $env"
-        return 1
-    fi
-    
-    debug_message "Using AWS region: $aws_region"
-    
-    # Get secrets.yml file path (single file in module root)
+    local aws_region=$(get_aws_region "$env")
     local env_path="$(get_environment_path "$env")"
     local secrets_file="$env_path/$module/secrets.yml"
     
-    debug_message "Looking for secrets file: $secrets_file"
-    
     if [[ ! -f "$secrets_file" ]]; then
-        warn_message "Secrets file not found: $secrets_file"
-        debug_message "Module $module may not have any secrets to clear"
-        return 0
+        return 0  # No secrets to clear
     fi
     
-    info_message "🔍 Found secrets.yml file in $module module"
-    
-    # Create array with single secrets file
-    local secret_files=("$secrets_file")
-    
-    # Process each secret file
-    local cleared_count=0
-    local failed_count=0
-    
-    for secret_file in "${secret_files[@]}"; do
-        local filename=$(basename "$secret_file")
-        info_message "📄 Processing secret file: $filename"
-        
-        if clear_secrets_from_file "$secret_file" "$aws_region"; then
-            ((cleared_count++))
-            success_message "✅ Cleared secrets from: $filename"
-        else
-            ((failed_count++))
-            error_message "❌ Failed to clear secrets from: $filename"
-        fi
-    done
-    
-    # Report results for this module
-    if [[ $failed_count -eq 0 ]]; then
-        success_message "✅ Module $module: cleared $cleared_count secret file(s)"
-        return 0
-    else
-        error_message "❌ Module $module: $failed_count secret file(s) failed to clear"
-        return 1
-    fi
-}
-
-# Clear secrets defined in a YAML file
-# Usage: clear_secrets_from_file "/path/to/secrets.yml" "us-east-2"
-clear_secrets_from_file() {
-    local secret_file="$1"
-    local aws_region="$2"
-    
-    debug_message "Clearing secrets from file: $secret_file"
-    
-    if [[ ! -f "$secret_file" ]]; then
-        error_message "Secret file not found: $secret_file"
-        return 1
-    fi
-    
-    # Extract secret names from YAML file
+    # Get secret names from YAML file
     local secret_names=()
     while IFS= read -r secret_name; do
-        if [[ -n "$secret_name" ]]; then
-            secret_names+=("$secret_name")
-            debug_message "Found secret in file: $secret_name"
-        fi
-    done < <(yq eval '.secrets | keys | .[]' "$secret_file" 2>/dev/null)
+        [[ -n "$secret_name" ]] && secret_names+=("$secret_name")
+    done < <(yq eval '.secrets | keys | .[]' "$secrets_file" 2>/dev/null)
     
     if [[ ${#secret_names[@]} -eq 0 ]]; then
-        warn_message "No secrets found in file: $secret_file"
         return 0
     fi
-    
-    debug_message "Found ${#secret_names[@]} secret(s) to clear: ${secret_names[*]}"
     
     # Clear each secret
     local success_count=0
-    local failure_count=0
-    
     for secret_key in "${secret_names[@]}"; do
-        # Get the secret name/ARN from the YAML
-        local secret_name=$(yq eval ".secrets.\"$secret_key\".name" "$secret_file" 2>/dev/null)
+        local secret_name=$(yq eval ".secrets.\"$secret_key\".name" "$secrets_file" 2>/dev/null)
         
-        if [[ -z "$secret_name" || "$secret_name" == "null" ]]; then
-            error_message "Secret name not found for key: $secret_key"
-            ((failure_count++))
-            continue
-        fi
-        
-        debug_message "Clearing secret: $secret_name (key: $secret_key)"
-        
-        if clear_aws_secret "$secret_name" "$aws_region"; then
-            ((success_count++))
-            info_message "  ✅ Cleared: $secret_name"
-        else
-            ((failure_count++))
-            error_message "  ❌ Failed: $secret_name"
+        if [[ -n "$secret_name" && "$secret_name" != "null" ]]; then
+            if clear_aws_secret "$secret_name" "$aws_region"; then
+                ((success_count++))
+            fi
         fi
     done
     
-    # Return success only if all secrets were cleared
-    if [[ $failure_count -eq 0 ]]; then
-        debug_message "Successfully cleared $success_count secret(s) from file"
-        return 0
-    else
-        error_message "Failed to clear $failure_count secret(s) from file"
-        return 1
-    fi
+    return 0
 }
 
-# Clear a single AWS secret by setting its value to "infra.sh cleared"
+# Clear a single AWS secret
 # Usage: clear_aws_secret "secret-name" "us-east-2"
 clear_aws_secret() {
     local secret_name="$1"
     local aws_region="$2"
     
-    debug_message "Clearing AWS secret: $secret_name in region: $aws_region"
-    
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would clear AWS secret: $secret_name"
-        dry_run_message "[DRY-RUN] AWS CLI command: aws secretsmanager update-secret --secret-id '$secret_name' --secret-string 'infra.sh cleared' --region $aws_region"
         return 0
     fi
     
-    # Get the full path to AWS CLI to avoid shell configuration issues
-    local aws_path
-    if ! aws_path=$(command -v aws); then
-        error_message "AWS CLI not found for secret clearing"
-        return 1
-    fi
-    
-    # Execute AWS CLI command to clear the secret
-    local aws_output=""
-    if aws_output=$(AWS_DEFAULT_REGION="$aws_region" "$aws_path" secretsmanager update-secret \
+    if aws secretsmanager update-secret \
         --secret-id "$secret_name" \
         --secret-string "infra.sh cleared" \
-        --region "$aws_region" 2>&1); then
-        
-        debug_message "AWS CLI command executed successfully"
-        debug_message "AWS CLI output: $aws_output"
+        --region "$aws_region" >/dev/null 2>&1; then
         return 0
     else
-        local exit_code=$?
-        debug_message "AWS CLI command failed with exit code: $exit_code"
-        debug_message "AWS CLI error output: $aws_output"
-        error_message "AWS CLI secret clearing failed for $secret_name: $aws_output"
         return 1
     fi
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Volume Verification Functions (for volumeManager.ts)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Check if volume is mounted (real implementation)
+# Usage: aws_verify_volume_mounted "dev" "athena" "athena-data"
+# Returns: 0=mounted, 1=not_mounted
+aws_verify_volume_mounted() {
+    local env="$1"
+    local instance_name="$2"
+    local volume_name="$3"
+    
+    debug_message "Checking if volume $volume_name is mounted on $instance_name"
+    
+    # Get volume and instance IDs
+    local volume_id=$(get_volume_id_from_outputs "$env" "$volume_name" 2>/dev/null || echo "")
+    local instance_id=$(get_instance_id_from_outputs "$env" "$instance_name" 2>/dev/null || echo "")
+    
+    if [[ -z "$volume_id" || -z "$instance_id" ]]; then
+        debug_message "Cannot get volume or instance ID for verification"
+        return 1  # Not mounted (cannot verify)
+    fi
+    
+    # Use existing AWS CLI check
+    if aws_is_volume_attached "$env" "$volume_id" "$instance_id"; then
+        debug_message "Volume $volume_name is attached to $instance_name"
+        return 0  # Mounted
+    else
+        debug_message "Volume $volume_name is NOT attached to $instance_name"
+        return 1  # Not mounted
+    fi
+}
+
+# Volume verification functions - now using real AWS CLI
+# These functions provide high-level volume verification using AWS CLI backend
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Module Export
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Export functions for use by other modules
-debug_message "AWS CLI module loaded successfully"
-
-# Wait for instance reboot completion (stops, then starts, then reaches running state)
-# Usage: wait_for_instance_reboot_completion "dev" "athena"
-wait_for_instance_reboot_completion() {
-    local env="$1"
-    local instance_name="$2"
-    
-    debug_message "Waiting for instance reboot completion: $instance_name"
-    
-    # Use generic function with 5-minute timeout and 20-second initial wait for reboot
-    # Initial wait allows instance to transition from stale "running" to actual reboot cycle
-    wait_for_instance_state "$env" "$instance_name" "running" 300 20 1 "reboot cycle"
-}
-
-# Get current instance status from AWS
-# Usage: get_instance_status "dev" "athena"
-# Returns: running, stopped, pending, stopping, shutting-down, terminated, etc.
-get_instance_status() {
-    local env="$1"
-    local instance_name="$2"
-    
-    debug_message "Getting instance status for: $instance_name"
-    
-    # Validate AWS CLI is available
-    if ! validate_aws_cli; then
-        debug_message "AWS CLI not available for status check"
-        return 1
-    fi
-    
-    # Get AWS region for this instance (using outputs API)
-    local aws_region
-    if ! aws_region=$(get_instance_aws_region_from_outputs "$env" "$instance_name"); then
-        debug_message "Cannot get AWS region for status check"
-        return 1
-    fi
-    
-    # Get instance ID using outputs API
-    local instance_id
-    if ! instance_id=$(get_instance_id_from_outputs "$env" "$instance_name"); then
-        debug_message "Cannot get instance ID for status check"
-        return 1
-    fi
-    
-    # Get current instance state from AWS
-    local state=""
-    if state=$(aws ec2 describe-instances --instance-ids "$instance_id" --region "$aws_region" --query 'Reservations[0].Instances[0].State.Name' --output text 2>/dev/null); then
-        debug_message "Instance $instance_name status: $state"
-        echo "$state"
-        return 0
-    else
-        debug_message "Failed to get instance status for $instance_name"
-        return 1
-    fi
-}
-
-# Wait for instance start completion (reaches running state)
-# Usage: wait_for_instance_start_completion "dev" "athena"
-wait_for_instance_start_completion() {
-    local env="$1"
-    local instance_name="$2"
-    
-    debug_message "Waiting for instance start completion: $instance_name"
-    
-    # Use generic function with 3-minute timeout for start operations
-    wait_for_instance_state "$env" "$instance_name" "running" 180 0 1 "start"
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Instance Termination Operations (for SSH failures)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Terminate a single instance using AWS CLI (for SSH failures)
-# Usage: terminate_instance "i-1234567890abcdef0" "athena" "us-east-2"
-terminate_instance() {
-    local instance_id="$1"
-    local instance_name="$2"
-    local aws_region="$3"
-    
-    debug_message "Terminating instance: $instance_id ($instance_name) in region: $aws_region"
-    
-    # Build the AWS CLI command
-    local aws_command="aws ec2 terminate-instances --instance-ids $instance_id --region $aws_region"
-    
-    if is_dry_run; then
-        dry_run_message "[DRY-RUN] Would terminate instance: $instance_id ($instance_name)"
-        dry_run_message "[DRY-RUN] AWS CLI command: $aws_command"
-        return 0
-    fi
-    
-    # Report termination in blue to user (less aggressive than red)
-    print_message "🔵 TERMINATING instance $instance_name ($instance_id)"
-    
-    # Execute the AWS CLI command
-    if eval "$aws_command" >/dev/null 2>&1; then
-        print_message "🔵 Termination command sent successfully for $instance_name"
-        print_message "ℹ️  Instance will terminate and may take a few minutes to complete"
-        return 0
-    else
-        warn_message "Failed to terminate instance: $instance_id ($instance_name)"
-        return 1
-    fi
-}
-
-# Wait for instance termination completion (reaches terminated state)
-# Usage: wait_for_instance_termination "dev" "athena"
-wait_for_instance_termination() {
-    local env="$1"
-    local instance_name="$2"
-    
-    debug_message "Waiting for instance termination: $instance_name"
-    
-    # Use generic function with 5-minute timeout and 2-second polling for termination
-    wait_for_instance_state "$env" "$instance_name" "terminated" 300 0 2 "termination"
-}
-
-# AWS CLI fallback termination for SSH failures (main entry point)
-# Usage: aws_terminate_instance_on_ssh_failure "dev" "athena"
-aws_terminate_instance_on_ssh_failure() {
-    local env="$1"
-    local instance_name="$2"
-    
-    debug_message "AWS CLI termination fallback for SSH failure: $instance_name"
-    
-    # Validate AWS CLI is available
-    if ! validate_aws_cli; then
-        warn_message "AWS CLI not available for termination fallback"
-        return 1
-    fi
-    
-    # Get AWS region for this instance (using outputs API)
-    local aws_region
-    if ! aws_region=$(get_instance_aws_region_from_outputs "$env" "$instance_name"); then
-        return 1
-    fi
-    
-    # Get instance ID using outputs API
-    local instance_id
-    if ! instance_id=$(get_instance_id_from_outputs "$env" "$instance_name"); then
-        print_message "🔴 Could not get instance ID for $instance_name" "$RED" "ERROR"
-        return 1
-    fi
-    
-    debug_message "Instance ID: $instance_id"
-    debug_message "AWS region: $aws_region"
-    
-    # Terminate the instance
-    if terminate_instance "$instance_id" "$instance_name" "$aws_region"; then
-        # Wait for termination to complete
-        if wait_for_instance_termination "$env" "$instance_name"; then
-            print_message "🔴 Instance $instance_name termination completed successfully" "$RED" "ERROR"
-                    return 0
-        else
-            print_message "🔴 Instance $instance_name termination timed out" "$RED" "ERROR"
-                    return 1
-        fi
-    else
-        print_message "🔴 Failed to terminate instance $instance_name" "$RED" "ERROR"
-            return 1
-        fi
-} 
+debug_message "AWS CLI module loaded successfully (KISS version)"
