@@ -80,8 +80,17 @@ generate_module_outputs() {
     local output_file="output.json"
     local success=true
     
-    # Build terragrunt output command with endpoint flags if needed
+    # Build terragrunt output command with performance optimizations
     local output_command="terragrunt output --json --provider-cache"
+    
+    # Add dependency fetch optimization for performance (fetches directly from S3 state)
+    # Only safe when not in apply/destroy operations to avoid race conditions
+    if ! action_modifies_state "${OP_ACTION:-output}"; then
+        output_command+=" --dependency-fetch-output-from-state"
+        debug_message "Added --dependency-fetch-output-from-state for performance (read-only operation)"
+    else
+        debug_message "Skipped --dependency-fetch-output-from-state (state-modifying operation may have race conditions)"
+    fi
     
     # Set environment variables for endpoint module if needed
     if [[ "$module" == "endpoints" ]]; then
@@ -215,8 +224,17 @@ generate_module_outputs() {
 #     local output_file="output.json"
 #     local success=true
 #     
-#     # Build terragrunt output command with endpoint flags if needed
+#     # Build terragrunt output command with performance optimizations
 #     local output_command="terragrunt output --json --provider-cache"
+#     
+#     # Add dependency fetch optimization for performance (fetches directly from S3 state)
+#     # Only safe when not in apply/destroy operations to avoid race conditions
+#     if ! action_modifies_state "${OP_ACTION:-output}"; then
+#         output_command+=" --dependency-fetch-output-from-state"
+#         debug_message "Added --dependency-fetch-output-from-state for performance (read-only operation)"
+#     else
+#         debug_message "Skipped --dependency-fetch-output-from-state (state-modifying operation may have race conditions)"
+#     fi
 #     
 #     # Add endpoint flags for endpoints module (same logic as execute_terragrunt)
 #     if [[ "$module" == "endpoints" ]]; then
