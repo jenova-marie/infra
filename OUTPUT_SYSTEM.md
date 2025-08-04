@@ -43,7 +43,7 @@ Unlike v1.x with its complex multiple strategies, v2.0 uses **one simple approac
 generate_outputs_for_modules(env, processed_modules...)
 # Purpose: Generate outputs for modules that were successfully processed
 # Parameters:
-#   $1 - Environment name (dev, dev, etc.)
+#   $1 - Environment name (dev, test, etc.)
 #   $2+ - List of modules that were processed by terragrunt
 # Returns: 0 on success, 1 on failure
 # Workflow: For each module → cd module → terragrunt output > outputs.json → copy to centralized
