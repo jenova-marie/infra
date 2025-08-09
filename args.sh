@@ -102,6 +102,9 @@ parse_arguments() {
         "query")
             parse_query_operation_args "$@"
             ;;
+        "diag")
+            parse_diag_operation_args "$@"
+            ;;
         *)
             handle_error "Unknown action: $ACTION"
             ;;
@@ -241,6 +244,36 @@ parse_standard_operation_args() {
                 handle_error "Unknown flag for $ACTION operation: $1"
                 return 1
                 ;;
+        esac
+    done
+}
+
+# Parse arguments for diag operation (requires env:module)
+# Usage: parse_diag_operation_args "dev:athena"
+parse_diag_operation_args() {
+    debug_message "Parsing diag operation arguments: $*"
+    if [[ $# -eq 0 ]]; then
+        handle_error "Target required for diag operation. Format: env:module"
+        return 1
+    fi
+    TARGET="$1"; shift
+    parse_target "$TARGET" || return 1
+    ENVIRONMENT="$PARSED_ENV"
+    TARGET_TYPE="$PARSED_TARGET"
+
+    # Require explicit module (no shorthand env only)
+    if [[ -z "$TARGET_TYPE" || "$TARGET_TYPE" == "all" ]]; then
+        handle_error "diag requires explicit env:module target (e.g., dev:ebss or dev:athena)"
+        return 1
+    fi
+
+    # Optional flags: --verbose, --no-color, --dry-run
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            "--dry-run") DRY_RUN=true; shift ;;
+            "--verbose") VERBOSE_LEVEL=1; shift ;;
+            "--no-color") NO_COLOR=true; shift ;;
+            *) handle_error "Unknown flag for diag: $1" ;;
         esac
     done
 }

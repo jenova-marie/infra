@@ -37,6 +37,9 @@ execute_operation() {
         "verify")
             execute_verify_operation
             ;;
+        "diag")
+            execute_diag_operation
+            ;;
         "status")
             execute_status_operation
             ;;

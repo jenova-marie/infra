@@ -32,6 +32,308 @@ validate_aws_cli() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Status Helpers (extract AWS CLI usage from status.sh)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Get EC2 instance object JSON for an instance ID
+# Why: Centralizes AWS call; callers parse fields as needed
+# Usage: aws_get_instance_object "dev" "i-012345" -> prints JSON or returns 1 if not found
+aws_get_instance_object() {
+    local env="$1"
+    local instance_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ec2 describe-instances \
+        --instance-ids "$instance_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    local obj
+    obj=$(echo "$data" | jq -r '.Reservations[0].Instances[0] // empty')
+    if [[ -z "$obj" || "$obj" == "null" ]]; then
+        return 1
+    fi
+    echo "$obj"
+}
+
+# Get EIP allocation ID for a public IP (empty if none)
+# Usage: aws_get_eip_allocation_for_ip "dev" "1.2.3.4" -> prints allocation id or empty
+aws_get_eip_allocation_for_ip() {
+    local env="$1"
+    local public_ip="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    aws ec2 describe-addresses \
+        --filters "Name=public-ip,Values=$public_ip" \
+        --region "$aws_region" \
+        --query "Addresses[0].AllocationId" \
+        --output text 2>/dev/null || true
+}
+
+# Describe a single EBS volume (prints JSON Volume or returns 1)
+aws_describe_volume() {
+    local env="$1"
+    local volume_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ec2 describe-volumes \
+        --volume-ids "$volume_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    local vol
+    vol=$(echo "$data" | jq -r '.Volumes[0] // empty')
+    if [[ -z "$vol" || "$vol" == "null" ]]; then
+        return 1
+    fi
+    echo "$vol"
+}
+
+# Describe an EIP by public IP (prints JSON of Addresses[0] or returns 1)
+aws_eip_describe_address() {
+    local env="$1"
+    local public_ip="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ec2 describe-addresses \
+        --public-ips "$public_ip" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    local addr
+    addr=$(echo "$data" | jq -r '.Addresses[0] // empty')
+    if [[ -z "$addr" || "$addr" == "null" ]]; then
+        return 1
+    fi
+    echo "$addr"
+}
+
+# ECR: describe a repository (prints JSON repo or returns 1)
+aws_ecr_describe_repository() {
+    local env="$1"
+    local repo_name="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ecr describe-repositories \
+        --repository-names "$repo_name" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    local repo
+    repo=$(echo "$data" | jq -r '.repositories[0] // empty')
+    if [[ -z "$repo" || "$repo" == "null" ]]; then
+        return 1
+    fi
+    echo "$repo"
+}
+
+# ECR: count images in a repository (prints integer, 0 on error)
+aws_ecr_list_images_count() {
+    local env="$1"
+    local repo_name="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        echo 0; return 0
+    fi
+    local data
+    if data=$(aws ecr list-images \
+        --repository-name "$repo_name" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        echo "$data" | jq -r '.imageIds | length'
+    else
+        echo 0
+    fi
+}
+
+# Describe VPC by ID (prints JSON Vpc or returns 1)
+aws_describe_vpc() {
+    local env="$1"
+    local vpc_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ec2 describe-vpcs \
+        --vpc-ids "$vpc_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    local vpc
+    vpc=$(echo "$data" | jq -r '.Vpcs[0] // empty')
+    if [[ -z "$vpc" || "$vpc" == "null" ]]; then
+        return 1
+    fi
+    echo "$vpc"
+}
+
+# Count subnets in a VPC
+aws_count_subnets_in_vpc() {
+    local env="$1"
+    local vpc_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        echo 0; return 0
+    fi
+    local data
+    if data=$(aws ec2 describe-subnets \
+        --filters "Name=vpc-id,Values=$vpc_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        echo "$data" | jq -r '.Subnets | length'
+    else
+        echo 0
+    fi
+}
+
+# Count route tables in a VPC
+aws_count_route_tables_in_vpc() {
+    local env="$1"
+    local vpc_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        echo 0; return 0
+    fi
+    local data
+    if data=$(aws ec2 describe-route-tables \
+        --filters "Name=vpc-id,Values=$vpc_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        echo "$data" | jq -r '.RouteTables | length'
+    else
+        echo 0
+    fi
+}
+
+# Describe a route table by ID (prints JSON or returns 1)
+aws_describe_route_table() {
+    local env="$1"
+    local rtb_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ec2 describe-route-tables \
+        --route-table-ids "$rtb_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    local rtb
+    rtb=$(echo "$data" | jq -r '.RouteTables[0] // empty')
+    if [[ -z "$rtb" || "$rtb" == "null" ]]; then
+        return 1
+    fi
+    echo "$rtb"
+}
+
+# Describe VPC peering connection by ID (prints JSON or returns 1)
+aws_describe_vpc_peering_connection() {
+    local env="$1"
+    local pcx_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ec2 describe-vpc-peering-connections \
+        --vpc-peering-connection-ids "$pcx_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    local pcx
+    pcx=$(echo "$data" | jq -r '.VpcPeeringConnections[0] // empty')
+    if [[ -z "$pcx" || "$pcx" == "null" ]]; then
+        return 1
+    fi
+    echo "$pcx"
+}
+
+# Whether any internet gateway is attached to VPC (prints Yes/No)
+aws_is_igw_attached_to_vpc() {
+    local env="$1"
+    local vpc_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        echo "No"; return 0
+    fi
+    local data
+    if data=$(aws ec2 describe-internet-gateways \
+        --filters "Name=attachment.vpc-id,Values=$vpc_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        local cnt=$(echo "$data" | jq -r '.InternetGateways | length')
+        if [[ "$cnt" -gt 0 ]]; then echo "Yes"; else echo "No"; fi
+    else
+        echo "No"
+    fi
+}
+
+# Describe a security group by ID (prints JSON or returns 1)
+aws_describe_security_group() {
+    local env="$1"
+    local sg_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ec2 describe-security-groups \
+        --group-ids "$sg_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    local sg
+    sg=$(echo "$data" | jq -r '.SecurityGroups[0] // empty')
+    if [[ -z "$sg" || "$sg" == "null" ]]; then
+        return 1
+    fi
+    echo "$sg"
+}
+
+# Count instances attached to a security group
+aws_count_instances_with_sg() {
+    local env="$1"
+    local sg_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        echo 0; return 0
+    fi
+    local data
+    if data=$(aws ec2 describe-instances \
+        --filters "Name=instance.group-id,Values=$sg_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        echo "$data" | jq -r '[.Reservations[].Instances[]] | length'
+    else
+        echo 0
+    fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Output Parsing Helper Functions
 # ─────────────────────────────────────────────────────────────────────────────
 

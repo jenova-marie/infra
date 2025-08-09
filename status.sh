@@ -294,6 +294,70 @@ execute_detailed_status() {
 # Summary Status Checks (Green/Red Indicators)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Determine if infrastructure module outputs contain effective resources
+# Usage: module_outputs_has_effective_resources "env" "module" "outputs_file"
+module_outputs_has_effective_resources() {
+    local env="$1"
+    local module="$2"
+    local file="$3"
+
+    # Module-specific heuristics mirroring diagnostics
+    case "$module" in
+        "vpc_routes")
+            local cnt
+            cnt=$(jq -r '..|strings?|select(startswith("rtb-"))' "$file" 2>/dev/null | wc -l | tr -d ' ')
+            [[ ${cnt:-0} -gt 0 ]]
+            return $?
+            ;;
+        "vpcs")
+            local cnt
+            cnt=$(jq -r '.vpc_ids.value // {} | to_entries | length' "$file" 2>/dev/null || echo 0)
+            [[ ${cnt:-0} -gt 0 ]]
+            return $?
+            ;;
+        "security_groups")
+            local cnt
+            cnt=$(jq -r '.security_group_ids.value // {} | to_entries | length' "$file" 2>/dev/null || echo 0)
+            [[ ${cnt:-0} -gt 0 ]]
+            return $?
+            ;;
+        "eips")
+            local cnt
+            cnt=$(jq -r '.eip_addresses.value // {} | to_entries | length' "$file" 2>/dev/null || echo 0)
+            [[ ${cnt:-0} -gt 0 ]]
+            return $?
+            ;;
+        "ebss")
+            local cnt
+            cnt=$(jq -r '.volume_ids.value // {} | to_entries | length' "$file" 2>/dev/null || echo 0)
+            [[ ${cnt:-0} -gt 0 ]]
+            return $?
+            ;;
+        "ecrs")
+            local cnt
+            cnt=$(jq -r '.repositories.value // {} | to_entries | length' "$file" 2>/dev/null || echo 0)
+            [[ ${cnt:-0} -gt 0 ]]
+            return $?
+            ;;
+        "peering-dev"|"peering-prod")
+            local cnt
+            cnt=$(jq -r '..|strings?|select(startswith("pcx-"))' "$file" 2>/dev/null | wc -l | tr -d ' ')
+            [[ ${cnt:-0} -gt 0 ]]
+            return $?
+            ;;
+        *)
+            # Fallback: any non-empty value present
+            local nonempty_count
+            nonempty_count=$(jq -r '
+              def nonempty: (type == "array" and length>0) or (type == "object" and length>0) or (type=="string" and . != "") or (type=="number") or (type=="boolean");
+              [.. | select(nonempty)] | length
+            ' "$file" 2>/dev/null || echo "0")
+            [[ ${nonempty_count:-0} -gt 0 ]]
+            return $?
+            ;;
+    esac
+}
+
 # Check module summary status
 # Usage: check_module_summary_status "dev" "athena"
 check_module_summary_status() {
@@ -366,23 +430,12 @@ check_instance_summary_status() {
         return
     fi
     
-    # Check instance status in AWS
-    local aws_instance_data
-    if ! aws_instance_data=$(aws ec2 describe-instances \
-        --instance-ids "$instance_id" \
-        --region "$aws_region" \
-        --output json 2>/dev/null); then
+    # Check instance status in AWS (modularized)
+    local aws_instance
+    if ! aws_instance=$(aws_get_instance_object "$env" "$instance_id"); then
         record_status_result "$instance_name" $STATUS_OFFLINE "Instance not found in AWS"
         local indicator=$(get_status_indicator $STATUS_OFFLINE)
         info_message "   $indicator $instance_name - OFFLINE (not found)"
-        return
-    fi
-    
-    local aws_instance=$(echo "$aws_instance_data" | jq -r '.Reservations[0].Instances[0]')
-    if [[ "$aws_instance" == "null" ]]; then
-        record_status_result "$instance_name" $STATUS_OFFLINE "Invalid AWS response"
-        local indicator=$(get_status_indicator $STATUS_OFFLINE)
-        info_message "   $indicator $instance_name - OFFLINE (invalid response)"
         return
     fi
     
@@ -442,10 +495,7 @@ check_infrastructure_summary_status() {
         return
     fi
     
-    # Check if outputs file has any content
-    local output_content=$(jq -r '. | keys | length' "$module_outputs_file" 2>/dev/null || echo "0")
-    
-    if [[ "$output_content" == "0" ]]; then
+    if ! module_outputs_has_effective_resources "$env" "$module" "$module_outputs_file"; then
         record_status_result "$module" $STATUS_OFFLINE "No resources defined"
         local indicator=$(get_status_indicator $STATUS_OFFLINE)
         info_message "   $indicator $module - OFFLINE (no resources)"
@@ -571,14 +621,10 @@ check_instance_detailed_status() {
         print_colored_info "      Public IP" "none" "$PURPLE"
     fi
     
-    # Check EIP allocation
+    # Check EIP allocation (modularized)
     local eip_allocation=""
     if [[ -n "$aws_public_ip" ]]; then
-        eip_allocation=$(aws ec2 describe-addresses \
-            --filters "Name=public-ip,Values=$aws_public_ip" \
-            --region "$aws_region" \
-            --query "Addresses[0].AllocationId" \
-            --output text 2>/dev/null || echo "")
+        eip_allocation=$(aws_get_eip_allocation_for_ip "$env" "$aws_public_ip" 2>/dev/null || echo "")
         
         if [[ "$eip_allocation" != "None" && -n "$eip_allocation" ]]; then
             print_colored_info "      EIP Allocation" "$eip_allocation" "$PURPLE"
@@ -683,15 +729,12 @@ check_ebs_detailed_status() {
         
         # Get volume details from AWS
         local aws_volume_data
-        if ! aws_volume_data=$(aws ec2 describe-volumes \
-            --volume-ids "$volume_id" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
+        if ! aws_volume_data=$(aws_describe_volume "$env" "$volume_id"); then
             warn_message "      ❌ Volume not found: $volume_id"
             continue
         fi
         
-        local aws_volume=$(echo "$aws_volume_data" | jq -r '.Volumes[0]')
+        local aws_volume="$aws_volume_data"
         if [[ "$aws_volume" == "null" ]]; then
             warn_message "      ❌ Invalid volume response: $volume_id"
             continue
@@ -836,15 +879,12 @@ check_eip_detailed_status() {
         
         # Get EIP details from AWS
         local aws_eip_data
-        if ! aws_eip_data=$(aws ec2 describe-addresses \
-            --public-ips "$eip_address" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
+        if ! aws_eip_data=$(aws_eip_describe_address "$env" "$eip_address"); then
             warn_message "      ❌ EIP not found: $eip_address"
             continue
         fi
         
-        local aws_eip=$(echo "$aws_eip_data" | jq -r '.Addresses[0]')
+        local aws_eip="$aws_eip_data"
         if [[ "$aws_eip" == "null" ]]; then
             warn_message "      ❌ Invalid EIP response: $eip_address"
             continue
@@ -960,15 +1000,12 @@ check_ecr_detailed_status() {
         
         # Get repository details from AWS
         local aws_repo_data
-        if ! aws_repo_data=$(aws ecr describe-repositories \
-            --repository-names "$repo_name" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
+        if ! aws_repo_data=$(aws_ecr_describe_repository "$env" "$repo_name"); then
             warn_message "      ❌ Repository not found: $repo_name"
             continue
         fi
         
-        local aws_repo=$(echo "$aws_repo_data" | jq -r '.repositories[0]')
+        local aws_repo="$aws_repo_data"
         if [[ "$aws_repo" == "null" ]]; then
             warn_message "      ❌ Invalid repository response: $repo_name"
             continue
@@ -984,15 +1021,9 @@ check_ecr_detailed_status() {
         ((active_repos++))
         
         # Get image count
-        local image_count=0
-        local aws_images_data
-        if aws_images_data=$(aws ecr list-images \
-            --repository-name "$repo_name" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
-            image_count=$(echo "$aws_images_data" | jq -r '.imageIds | length')
-            ((total_images += image_count))
-        fi
+        local image_count
+        image_count=$(aws_ecr_list_images_count "$env" "$repo_name")
+        ((total_images += image_count))
         
         # Format creation time
         local create_date=""
@@ -1080,15 +1111,12 @@ check_vpc_detailed_status() {
         
         # Get VPC details from AWS
         local aws_vpc_data
-        if ! aws_vpc_data=$(aws ec2 describe-vpcs \
-            --vpc-ids "$vpc_id" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
+        if ! aws_vpc_data=$(aws_describe_vpc "$env" "$vpc_id"); then
             warn_message "      ❌ VPC not found: $vpc_id"
             continue
         fi
         
-        local aws_vpc=$(echo "$aws_vpc_data" | jq -r '.Vpcs[0]')
+        local aws_vpc="$aws_vpc_data"
         if [[ "$aws_vpc" == "null" ]]; then
             warn_message "      ❌ Invalid VPC response: $vpc_id"
             continue
@@ -1121,37 +1149,16 @@ check_vpc_detailed_status() {
         esac
         
         # Get subnet count
-        local subnet_count=0
-        local aws_subnets_data
-        if aws_subnets_data=$(aws ec2 describe-subnets \
-            --filters "Name=vpc-id,Values=$vpc_id" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
-            subnet_count=$(echo "$aws_subnets_data" | jq -r '.Subnets | length')
-        fi
+        local subnet_count
+        subnet_count=$(aws_count_subnets_in_vpc "$env" "$vpc_id")
         
         # Get route table count
-        local route_table_count=0
-        local aws_route_tables_data
-        if aws_route_tables_data=$(aws ec2 describe-route-tables \
-            --filters "Name=vpc-id,Values=$vpc_id" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
-            route_table_count=$(echo "$aws_route_tables_data" | jq -r '.RouteTables | length')
-        fi
+        local route_table_count
+        route_table_count=$(aws_count_route_tables_in_vpc "$env" "$vpc_id")
         
         # Get internet gateway association
-        local igw_attached="No"
-        local aws_igw_data
-        if aws_igw_data=$(aws ec2 describe-internet-gateways \
-            --filters "Name=attachment.vpc-id,Values=$vpc_id" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
-            local igw_count=$(echo "$aws_igw_data" | jq -r '.InternetGateways | length')
-            if [[ $igw_count -gt 0 ]]; then
-                igw_attached="Yes"
-            fi
-        fi
+        local igw_attached
+        igw_attached=$(aws_is_igw_attached_to_vpc "$env" "$vpc_id")
         
         # Display VPC information
         info_message "      $vpc_indicator VPC: $vpc_id"
@@ -1235,15 +1242,12 @@ check_sg_detailed_status() {
         
         # Get Security Group details from AWS
         local aws_sg_data
-        if ! aws_sg_data=$(aws ec2 describe-security-groups \
-            --group-ids "$sg_id" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
+        if ! aws_sg_data=$(aws_describe_security_group "$env" "$sg_id"); then
             warn_message "      ❌ Security Group not found: $sg_id"
             continue
         fi
         
-        local aws_sg=$(echo "$aws_sg_data" | jq -r '.SecurityGroups[0]')
+        local aws_sg="$aws_sg_data"
         if [[ "$aws_sg" == "null" ]]; then
             warn_message "      ❌ Invalid Security Group response: $sg_id"
             continue
@@ -1262,14 +1266,8 @@ check_sg_detailed_status() {
         local egress_rules=$(echo "$aws_sg" | jq -r '.IpPermissionsEgress | length')
         
         # Check for instances using this security group
-        local instance_count=0
-        local aws_instances_data
-        if aws_instances_data=$(aws ec2 describe-instances \
-            --filters "Name=instance.group-id,Values=$sg_id" \
-            --region "$aws_region" \
-            --output json 2>/dev/null); then
-            instance_count=$(echo "$aws_instances_data" | jq -r '[.Reservations[].Instances[]] | length')
-        fi
+        local instance_count
+        instance_count=$(aws_count_instances_with_sg "$env" "$sg_id")
         
         # Display Security Group information
         info_message "      🟢 Security Group: $sg_id"
@@ -1379,19 +1377,9 @@ check_instance_summary_status_pretty() {
     
     # Check instance status in AWS
     local aws_instance_data
-    if ! aws_instance_data=$(aws ec2 describe-instances \
-        --instance-ids "$instance_id" \
-        --region "$aws_region" \
-        --output json 2>/dev/null); then
+    if ! aws_instance=$(aws_get_instance_object "$env" "$instance_id"); then
         record_status_result "$instance_name" $STATUS_OFFLINE "Instance not found in AWS"
         print_pretty_status_line "$instance_name" $STATUS_OFFLINE "not found"
-        return
-    fi
-    
-    local aws_instance=$(echo "$aws_instance_data" | jq -r '.Reservations[0].Instances[0]')
-    if [[ "$aws_instance" == "null" ]]; then
-        record_status_result "$instance_name" $STATUS_OFFLINE "Invalid AWS response"
-        print_pretty_status_line "$instance_name" $STATUS_OFFLINE "invalid response"
         return
     fi
     
@@ -1443,10 +1431,7 @@ check_infrastructure_summary_status_pretty() {
         return
     fi
     
-    # Check if outputs file has any content
-    local output_content=$(jq -r '. | keys | length' "$module_outputs_file" 2>/dev/null || echo "0")
-    
-    if [[ "$output_content" == "0" ]]; then
+    if ! module_outputs_has_effective_resources "$env" "$module" "$module_outputs_file"; then
         record_status_result "$module" $STATUS_OFFLINE "No resources defined"
         print_pretty_status_line "$module" $STATUS_OFFLINE "no resources"
         return

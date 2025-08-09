@@ -386,13 +386,206 @@ print_pretty_status_line() {
     local indicator=$(get_pretty_status_indicator "$status")
     local status_text=$(get_pretty_status_text "$status")
     
+    # Choose colors per status (centralized color policy)
+    local indicator_color="$WHITE"
+    local status_color="$GREEN"
+    case "$status" in
+        $STATUS_ONLINE)
+            indicator_color="$GREEN"
+            status_color="$GREEN"
+            ;;
+        $STATUS_OFFLINE)
+            indicator_color="$BRIGHT_RED"
+            status_color="$BRIGHT_RED"
+            ;;
+        $STATUS_WARNING)
+            indicator_color="$YELLOW"
+            status_color="$YELLOW"
+            ;;
+        $STATUS_UNKNOWN)
+            indicator_color="$RED"
+            status_color="$RED"
+            ;;
+    esac
+    
     # Format with columns: indicator (8), label (20), status (15), details (rest)
     if [[ "$NO_COLOR" != true ]]; then
-        printf "${WHITE}%-8s ${CYAN}%-20s ${GREEN}%-15s ${YELLOW}%s${NC}\n" \
+        printf "${indicator_color}%-8s ${CYAN}%-20s ${status_color}%-15s ${YELLOW}%s${NC}\n" \
             "$indicator" "$label" "$status_text" "$details"
     else
         printf "%-8s %-20s %-15s %s\n" \
             "$indicator" "$label" "$status_text" "$details"
+    fi
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Diagnostics Tabular Display Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+# EC2
+print_diag_table_header_ec2() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-20s %-10s %-12s %-12s %-16s %-16s${NC}\n" \
+            "InstanceID" "State" "Type" "AZ" "PublicIP" "PrivateIP"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..92})${NC}"
+    else
+        printf "%-20s %-10s %-12s %-12s %-16s %-16s\n" \
+            "InstanceID" "State" "Type" "AZ" "PublicIP" "PrivateIP"
+        printf '%0.s-' {1..92}; echo
+    fi
+}
+print_diag_table_row_ec2() {
+    local id="$1" state="$2" type="$3" az="$4" pub="$5" priv="$6"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-20s ${GREEN}%-10s ${WHITE}%-12s ${WHITE}%-12s ${WHITE}%-16s ${WHITE}%-16s${NC}\n" \
+            "$id" "$state" "$type" "$az" "${pub:-none}" "$priv"
+    else
+        printf "%-20s %-10s %-12s %-12s %-16s %-16s\n" \
+            "$id" "$state" "$type" "$az" "${pub:-none}" "$priv"
+    fi
+}
+
+# Security Groups
+print_diag_table_header_sg() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-18s %-20s %-15s %-8s %-8s %-8s${NC}\n" \
+            "GroupID" "Name" "VPC" "Ingress" "Egress" "Inst"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..82})${NC}"
+    else
+        printf "%-18s %-20s %-15s %-8s %-8s %-8s\n" "GroupID" "Name" "VPC" "Ingress" "Egress" "Inst"
+        printf '%0.s-' {1..82}; echo
+    fi
+}
+print_diag_table_row_sg() {
+    local id="$1" name="$2" vpc="$3" in="$4" eg="$5" inst="$6"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-18s ${WHITE}%-20s ${WHITE}%-15s ${GREEN}%-8s ${GREEN}%-8s ${WHITE}%-8s${NC}\n" \
+            "$id" "$name" "$vpc" "$in" "$eg" "$inst"
+    else
+        printf "%-18s %-20s %-15s %-8s %-8s %-8s\n" "$id" "$name" "$vpc" "$in" "$eg" "$inst"
+    fi
+}
+
+# VPCs
+print_diag_table_header_vpc() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-18s %-10s %-18s %-7s %-12s %-8s %-10s %-4s${NC}\n" \
+            "VpcID" "State" "CIDR" "Default" "DHCP" "Subnets" "RouteTbls" "IGW"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..92})${NC}"
+    else
+        printf "%-18s %-10s %-18s %-7s %-12s %-8s %-10s %-4s\n" \
+            "VpcID" "State" "CIDR" "Default" "DHCP" "Subnets" "RouteTbls" "IGW"
+        printf '%0.s-' {1..92}; echo
+    fi
+}
+print_diag_table_row_vpc() {
+    local id="$1" state="$2" cidr="$3" def="$4" dhcp="$5" subnets="$6" routes="$7" igw="$8"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-18s ${GREEN}%-10s ${WHITE}%-18s ${WHITE}%-7s ${WHITE}%-12s ${WHITE}%-8s ${WHITE}%-10s ${WHITE}%-4s${NC}\n" \
+            "$id" "$state" "$cidr" "$def" "$dhcp" "$subnets" "$routes" "$igw"
+    else
+        printf "%-18s %-10s %-18s %-7s %-12s %-8s %-10s %-4s\n" \
+            "$id" "$state" "$cidr" "$def" "$dhcp" "$subnets" "$routes" "$igw"
+    fi
+}
+
+# VPC Route Tables
+print_diag_table_header_vpc_routes() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-18s %-8s %-12s${NC}\n" "RouteTableID" "Routes" "Associations"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..44})${NC}"
+    else
+        printf "%-18s %-8s %-12s\n" "RouteTableID" "Routes" "Associations"
+        printf '%0.s-' {1..44}; echo
+    fi
+}
+print_diag_table_row_vpc_routes() {
+    local id="$1" routes="$2" assoc="$3"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-18s ${WHITE}%-8s ${WHITE}%-12s${NC}\n" "$id" "$routes" "$assoc"
+    else
+        printf "%-18s %-8s %-12s\n" "$id" "$routes" "$assoc"
+    fi
+}
+
+# EBS
+print_diag_table_header_ebs() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-20s %-10s %-8s %-10s %-12s %-9s${NC}\n" \
+            "VolumeID" "State" "SizeGB" "Type" "AZ" "Encrypted"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..75})${NC}"
+    else
+        printf "%-20s %-10s %-8s %-10s %-12s %-9s\n" "VolumeID" "State" "SizeGB" "Type" "AZ" "Encrypted"
+        printf '%0.s-' {1..75}; echo
+    fi
+}
+print_diag_table_row_ebs() {
+    local id="$1" state="$2" size="$3" type="$4" az="$5" enc="$6"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-20s ${GREEN}%-10s ${WHITE}%-8s ${WHITE}%-10s ${WHITE}%-12s ${WHITE}%-9s${NC}\n" \
+            "$id" "$state" "$size" "$type" "$az" "$enc"
+    else
+        printf "%-20s %-10s %-8s %-10s %-12s %-9s\n" "$id" "$state" "$size" "$type" "$az" "$enc"
+    fi
+}
+
+# EIPs
+print_diag_table_header_eips() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-16s %-20s %-20s %-18s %-18s %-8s${NC}\n" \
+            "PublicIP" "AllocationID" "AssociationID" "InstanceID" "ENI" "Domain"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..102})${NC}"
+    else
+        printf "%-16s %-20s %-20s %-18s %-18s %-8s\n" "PublicIP" "AllocationID" "AssociationID" "InstanceID" "ENI" "Domain"
+        printf '%0.s-' {1..102}; echo
+    fi
+}
+print_diag_table_row_eips() {
+    local ip="$1" alloc="$2" assoc="$3" inst="$4" eni="$5" dom="$6"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-16s ${WHITE}%-20s ${WHITE}%-20s ${WHITE}%-18s ${WHITE}%-18s ${WHITE}%-8s${NC}\n" \
+            "$ip" "${alloc:-none}" "${assoc:-none}" "${inst:-none}" "${eni:-none}" "$dom"
+    else
+        printf "%-16s %-20s %-20s %-18s %-18s %-8s\n" \
+            "$ip" "${alloc:-none}" "${assoc:-none}" "${inst:-none}" "${eni:-none}" "$dom"
+    fi
+}
+
+# ECR
+print_diag_table_header_ecr() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-24s %-8s %-14s %-11s${NC}\n" "Repository" "Images" "TagMutability" "ScanOnPush"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..62})${NC}"
+    else
+        printf "%-24s %-8s %-14s %-11s\n" "Repository" "Images" "TagMutability" "ScanOnPush"
+        printf '%0.s-' {1..62}; echo
+    fi
+}
+print_diag_table_row_ecr() {
+    local repo="$1" images="$2" mut="$3" scan="$4"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-24s ${WHITE}%-8s ${WHITE}%-14s ${WHITE}%-11s${NC}\n" "$repo" "$images" "$mut" "$scan"
+    else
+        printf "%-24s %-8s %-14s %-11s\n" "$repo" "$images" "$mut" "$scan"
+    fi
+}
+
+# Peering
+print_diag_table_header_peering() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-20s %-12s %-18s %-18s${NC}\n" "PeeringID" "Status" "RequesterVPC" "AccepterVPC"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..72})${NC}"
+    else
+        printf "%-20s %-12s %-18s %-18s\n" "PeeringID" "Status" "RequesterVPC" "AccepterVPC"
+        printf '%0.s-' {1..72}; echo
+    fi
+}
+print_diag_table_row_peering() {
+    local id="$1" status="$2" req="$3" acc="$4"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-20s ${WHITE}%-12s ${WHITE}%-18s ${WHITE}%-18s${NC}\n" "$id" "$status" "$req" "$acc"
+    else
+        printf "%-20s %-12s %-18s %-18s\n" "$id" "$status" "$req" "$acc"
     fi
 }
 
