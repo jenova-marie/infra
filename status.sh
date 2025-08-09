@@ -407,7 +407,7 @@ check_instance_summary_status() {
     local instance_id
     if ! instance_id=$(jq -r --arg instance_key "$instance_key" '
         .instance_ids.value[$instance_key] // empty
-    ' "$instance_outputs_file" 2>/dev/null); then
+    ' "$instance_outputs_file" 2>/dev/null || echo ""); then
         record_status_result "$instance_name" $STATUS_UNKNOWN "Cannot parse instance ID"
         local indicator=$(get_status_indicator $STATUS_UNKNOWN)
         info_message "   $indicator $instance_name - UNKNOWN (parsing error)"
@@ -440,10 +440,10 @@ check_instance_summary_status() {
     fi
     
     # Get instance details
-    local aws_state=$(echo "$aws_instance" | jq -r '.State.Name // empty')
-    local aws_public_ip=$(echo "$aws_instance" | jq -r '.PublicIpAddress // empty')
-    local aws_private_ip=$(echo "$aws_instance" | jq -r '.PrivateIpAddress // empty')
-    local aws_instance_type=$(echo "$aws_instance" | jq -r '.InstanceType // empty')
+    local aws_state=$(echo "$aws_instance" | jq -r '.State.Name // empty' 2>/dev/null || echo "")
+    local aws_public_ip=$(echo "$aws_instance" | jq -r '.PublicIpAddress // empty' 2>/dev/null || echo "")
+    local aws_private_ip=$(echo "$aws_instance" | jq -r '.PrivateIpAddress // empty' 2>/dev/null || echo "")
+    local aws_instance_type=$(echo "$aws_instance" | jq -r '.InstanceType // empty' 2>/dev/null || echo "")
     
     # Determine status based on instance state
     local status
@@ -1355,7 +1355,7 @@ check_instance_summary_status_pretty() {
     local instance_id
     if ! instance_id=$(jq -r --arg instance_key "$instance_key" '
         .instance_ids.value[$instance_key] // empty
-    ' "$instance_outputs_file" 2>/dev/null); then
+    ' "$instance_outputs_file" 2>/dev/null || echo ""); then
         record_status_result "$instance_name" $STATUS_UNKNOWN "Cannot parse instance ID"
         print_pretty_status_line "$instance_name" $STATUS_UNKNOWN "parsing error"
         return
@@ -1384,10 +1384,10 @@ check_instance_summary_status_pretty() {
     fi
     
     # Get instance details
-    local aws_state=$(echo "$aws_instance" | jq -r '.State.Name // empty')
-    local aws_public_ip=$(echo "$aws_instance" | jq -r '.PublicIpAddress // empty')
-    local aws_private_ip=$(echo "$aws_instance" | jq -r '.PrivateIpAddress // empty')
-    local aws_instance_type=$(echo "$aws_instance" | jq -r '.InstanceType // empty')
+    local aws_state=$(echo "$aws_instance" | jq -r '.State.Name // empty' 2>/dev/null || echo "")
+    local aws_public_ip=$(echo "$aws_instance" | jq -r '.PublicIpAddress // empty' 2>/dev/null || echo "")
+    local aws_private_ip=$(echo "$aws_instance" | jq -r '.PrivateIpAddress // empty' 2>/dev/null || echo "")
+    local aws_instance_type=$(echo "$aws_instance" | jq -r '.InstanceType // empty' 2>/dev/null || echo "")
     
     # Determine status based on instance state
     local status
