@@ -46,6 +46,72 @@ diag_peering_module() {
         acct1=$(echo "$pcx_json" | jq -r '.RequesterVpcInfo.VpcId // empty')
         acct2=$(echo "$pcx_json" | jq -r '.AccepterVpcInfo.VpcId // empty')
         print_diag_table_row_peering "$pcx" "$status" "$acct1" "$acct2"
+
+        # Show any route tables that reference this peering connection
+        local rts_json
+        rts_json=$(aws_list_route_tables_for_pcx "$env" "$pcx" 2>/dev/null || echo "[]")
+        local rt_count
+        rt_count=$(echo "$rts_json" | jq -r 'length')
+        if [[ ${rt_count:-0} -gt 0 ]]; then
+            # Summary of route tables
+            print_diag_table_header_vpc_routes
+            echo "$rts_json" | jq -c '.[]' | while read -r rtb; do
+                local rtb_id routes assoc
+                rtb_id=$(echo "$rtb" | jq -r '.RouteTableId // empty')
+                routes=$(echo "$rtb" | jq -r '.Routes | length')
+                assoc=$(echo "$rtb" | jq -r '.Associations | length')
+                print_diag_table_row_vpc_routes "$rtb_id" "$routes" "$assoc"
+                # Detailed routes in this table
+                local route_entries
+                route_entries=$(echo "$rtb" | jq -r '.Routes[]? | @base64' 2>/dev/null || true)
+                if [[ -n "$route_entries" ]]; then
+                    print_diag_table_header_vpc_route_entries
+                    while read -r encoded; do
+                        [[ -z "$encoded" ]] && continue
+                        local route_json
+                        route_json=$(echo "$encoded" | base64 --decode 2>/dev/null || echo "{}")
+                        local destination target target_type state origin
+                        destination=$(echo "$route_json" | jq -r '(.DestinationCidrBlock // .DestinationIpv6CidrBlock // .DestinationPrefixListId // "")' 2>/dev/null || echo "")
+                        target=$(echo "$route_json" | jq -r '(.GatewayId // .NatGatewayId // .TransitGatewayId // .VpcPeeringConnectionId // .EgressOnlyInternetGatewayId // .NetworkInterfaceId // .InstanceId // "")' 2>/dev/null || echo "")
+                        if [[ -n "$target" ]]; then
+                            if   echo "$route_json" | jq -e '.GatewayId?    ' >/dev/null 2>&1; then target_type="IGW/VGW";
+                            elif echo "$route_json" | jq -e '.NatGatewayId?' >/dev/null 2>&1; then target_type="NAT";
+                            elif echo "$route_json" | jq -e '.TransitGatewayId?' >/dev/null 2>&1; then target_type="TGW";
+                            elif echo "$route_json" | jq -e '.VpcPeeringConnectionId?' >/dev/null 2>&1; then target_type="PCX";
+                            elif echo "$route_json" | jq -e '.EgressOnlyInternetGatewayId?' >/dev/null 2>&1; then target_type="EIGW";
+                            elif echo "$route_json" | jq -e '.NetworkInterfaceId?' >/dev/null 2>&1; then target_type="ENI";
+                            elif echo "$route_json" | jq -e '.InstanceId?' >/dev/null 2>&1; then target_type="Instance";
+                            else target_type="Other"; fi
+                        else
+                            target_type="Blackhole"
+                        fi
+                        state=$(echo "$route_json" | jq -r '.State // ""' 2>/dev/null || echo "")
+                        origin=$(echo "$route_json" | jq -r '.Origin // ""' 2>/dev/null || echo "")
+                        print_diag_table_row_vpc_route_entry "${destination:-}" "${target:-}" "${target_type:-}" "${state:-}" "${origin:-}"
+                    done < <(echo "$route_entries")
+                    echo ""
+                fi
+                # Associations for this table
+                local assoc_entries
+                assoc_entries=$(echo "$rtb" | jq -r '.Associations[]? | @base64' 2>/dev/null || true)
+                if [[ -n "$assoc_entries" ]]; then
+                    print_diag_table_header_vpc_route_associations
+                    while read -r aencoded; do
+                        [[ -z "$aencoded" ]] && continue
+                        local assoc_json
+                        assoc_json=$(echo "$aencoded" | base64 --decode 2>/dev/null || echo "{}")
+                        local assoc_id is_main subnet_id
+                        assoc_id=$(echo "$assoc_json" | jq -r '.RouteTableAssociationId // ""' 2>/dev/null || echo "")
+                        is_main=$(echo "$assoc_json" | jq -r '.Main // false' 2>/dev/null || echo "false")
+                        subnet_id=$(echo "$assoc_json" | jq -r '.SubnetId // ""' 2>/dev/null || echo "")
+                        print_diag_table_row_vpc_route_association "${assoc_id:-}" "${is_main}" "${subnet_id:-}" "$rtb_id"
+                    done < <(echo "$assoc_entries")
+                    echo ""
+                fi
+            done
+        else
+            debug_message "No route tables reference peering $pcx"
+        fi
     done < <(echo "$pcx_ids")
 
     success_message "✅ VPC Peering diagnostics completed ($count connection(s))"

@@ -917,4 +917,23 @@ aws_verify_volume_mounted() {
 # Module Export
 # ─────────────────────────────────────────────────────────────────────────────
 
+# List route tables that reference a specific VPC peering connection
+# Usage: aws_list_route_tables_for_pcx "env" "pcx-123" -> prints JSON array of RouteTables
+aws_list_route_tables_for_pcx() {
+    local env="$1"
+    local pcx_id="$2"
+    local aws_region
+    if ! aws_region=$(get_aws_region "$env" 2>/dev/null); then
+        return 2
+    fi
+    local data
+    if ! data=$(aws ec2 describe-route-tables \
+        --filters "Name=route.vpc-peering-connection-id,Values=$pcx_id" \
+        --region "$aws_region" \
+        --output json 2>/dev/null); then
+        return 1
+    fi
+    echo "$data" | jq -r '.RouteTables // []'
+}
+
 debug_message "AWS CLI module loaded successfully (KISS version)"
