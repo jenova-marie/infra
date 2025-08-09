@@ -805,7 +805,7 @@ clear_secrets_for_destroy_disabled_modules() {
     local success_count=0
     for module in "${destroy_disabled_modules[@]}"; do
         if clear_module_secrets "$env" "$module"; then
-            ((success_count++))
+            success_count=$((success_count + 1))
         fi
     done
     
@@ -848,7 +848,7 @@ clear_module_secrets() {
         
         if [[ -n "$secret_name" && "$secret_name" != "null" ]]; then
             if clear_aws_secret "$secret_name" "$aws_region"; then
-                ((success_count++))
+                success_count=$((success_count + 1))
             fi
         fi
     done

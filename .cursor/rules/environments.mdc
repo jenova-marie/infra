@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+# Cross-Environment Shell Practices
+
+- Target shells: local macOS (old Bash) and AL2023 (Bash 5.x).
+- Avoid `((var++))` under `set -e`; use `var=$((var + 1))` for portability.
+- Guard `jq` reads: `... | jq -r '...' 2>/dev/null || echo ""`.
+- Prefer centralized path/region resolution helpers (`get_environment_path`, `get_aws_region`).

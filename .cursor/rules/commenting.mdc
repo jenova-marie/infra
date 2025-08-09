@@ -1,0 +1,12 @@
+---
+alwaysApply: true
+---
+# Enforced Commenting Standard
+
+- Explain **why**, not how. Place comments above the code they describe.
+- Comment when:
+  - Introducing new functions/modules
+  - Changing behavior/logic
+  - Non-trivial algorithms (purpose, inputs, outputs)
+- Keep comments current; remove obsolete ones.
+- Clear, concise, professional grammar.

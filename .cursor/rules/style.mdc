@@ -1,0 +1,8 @@
+---
+alwaysApply: true
+---
+# Jenova’s Style Highlights
+
+- Prefer **pnpm** for JS/TS projects; TypeScript and Bash by default.
+- For TS/React: semicolons mandatory; no trailing commas; structured logging over raw `console.log`.
+- For Bash in this repo: use `debug_message`, `info_message`, `warn_message`, `handle_error` utilities; `set -euo pipefail` by default.

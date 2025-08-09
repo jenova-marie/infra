@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+# Infra Operations Guide
+
+- **Entry point**: [infra](mdc:infra/infra)
+- **Core modules**: [status.sh](mdc:infra/status.sh), [output.sh](mdc:infra/output.sh), [aws.sh](mdc:infra/aws.sh), [display.sh](mdc:infra/display.sh), [modules.sh](mdc:infra/modules.sh), [operations.sh](mdc:infra/operations.sh), [shared.sh](mdc:infra/shared.sh)
+- **Routing**: Use `get_operation_context()` and `operations.sh` dispatch; avoid bespoke argument parsing.
+- **Outputs**: All output generation and copying must go through [output.sh](mdc:infra/output.sh). Do not invoke `terragrunt output` directly from other modules.
+- **Diagnostics**: Use [diag.sh](mdc:infra/diag.sh) to route per-module checks; module-specific logic lives in `diag.*.sh`.

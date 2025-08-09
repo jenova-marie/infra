@@ -47,22 +47,24 @@ record_status_result() {
     local status="$2"
     local details="${3:-}"
     
-    ((STATUS_TOTAL_RESOURCES++))
+    # Use safe arithmetic that works with set -e on all Bash versions
+    STATUS_TOTAL_RESOURCES=$((STATUS_TOTAL_RESOURCES + 1))
+    
     case "$status" in
         $STATUS_ONLINE) 
-            ((STATUS_ONLINE_RESOURCES++))
+            STATUS_ONLINE_RESOURCES=$((STATUS_ONLINE_RESOURCES + 1))
             debug_message "🟢 $resource_name: ONLINE ($details)"
             ;;
         $STATUS_OFFLINE) 
-            ((STATUS_OFFLINE_RESOURCES++))
-            debug_message "🔴 $resource_name: OFFLINE ($details)"
+            STATUS_OFFLINE_RESOURCES=$((STATUS_OFFLINE_RESOURCES + 1))
+            debug_message "OFFLINE: $resource_name ($details)"
             ;;
         $STATUS_WARNING) 
-            ((STATUS_WARNING_RESOURCES++))
+            STATUS_WARNING_RESOURCES=$((STATUS_WARNING_RESOURCES + 1))
             debug_message "🟡 $resource_name: WARNING ($details)"
             ;;
         $STATUS_UNKNOWN) 
-            ((STATUS_UNKNOWN_RESOURCES++))
+            STATUS_UNKNOWN_RESOURCES=$((STATUS_UNKNOWN_RESOURCES + 1))
             debug_message "⚪ $resource_name: UNKNOWN ($details)"
             ;;
     esac
@@ -225,9 +227,13 @@ execute_summary_status() {
             echo "   ────────────────────────────────────────────────────────────────────"
         fi
         
+        debug_message "About to process ${#instances[@]} instances: ${instances[*]}"
         for module in "${instances[@]:-}"; do
+            debug_message "Processing instance module: $module"
             check_module_summary_status_pretty "$env" "$module"
-    done
+            debug_message "Completed processing instance module: $module"
+        done
+        debug_message "Completed all instance processing"
         echo ""
     fi
     
@@ -725,7 +731,7 @@ check_ebs_detailed_status() {
             continue
         fi
         
-        ((volume_count++))
+        volume_count=$((volume_count + 1))
         
         # Get volume details from AWS
         local aws_volume_data
@@ -766,7 +772,7 @@ check_ebs_detailed_status() {
         case "$volume_state" in
             "available"|"in-use") 
                 volume_indicator="🟢"
-                ((online_volumes++))
+                online_volumes=$((online_volumes + 1))
                 ;;
             "creating"|"deleting") 
                 volume_indicator="🟡"
@@ -779,7 +785,7 @@ check_ebs_detailed_status() {
                 ;;
         esac
         
-        ((total_size += volume_size))
+        total_size=$((total_size + volume_size))
         
         # Format creation time
         local create_date=""
@@ -875,7 +881,7 @@ check_eip_detailed_status() {
             continue
         fi
         
-        ((eip_count++))
+        eip_count=$((eip_count + 1))
         
         # Get EIP details from AWS
         local aws_eip_data
@@ -898,9 +904,9 @@ check_eip_detailed_status() {
         local domain=$(echo "$aws_eip" | jq -r '.Domain // empty')
         local network_interface=$(echo "$aws_eip" | jq -r '.NetworkInterfaceId // empty')
         
-        ((allocated_eips++))
+        allocated_eips=$((allocated_eips + 1))
         if [[ -n "$instance_id" ]]; then
-            ((associated_eips++))
+            associated_eips=$((associated_eips + 1))
         fi
         
         # Determine status indicator
@@ -996,7 +1002,7 @@ check_ecr_detailed_status() {
             continue
         fi
         
-        ((repo_count++))
+        repo_count=$((repo_count + 1))
         
         # Get repository details from AWS
         local aws_repo_data
@@ -1018,12 +1024,12 @@ check_ecr_detailed_status() {
         local image_tag_mutability=$(echo "$aws_repo" | jq -r '.imageTagMutability // empty')
         local scan_on_push=$(echo "$aws_repo" | jq -r '.imageScanningConfiguration.scanOnPush // false')
         
-        ((active_repos++))
+        active_repos=$((active_repos + 1))
         
         # Get image count
         local image_count
         image_count=$(aws_ecr_list_images_count "$env" "$repo_name")
-        ((total_images += image_count))
+        total_images=$((total_images + image_count))
         
         # Format creation time
         local create_date=""
@@ -1107,7 +1113,7 @@ check_vpc_detailed_status() {
             continue
         fi
         
-        ((vpc_count++))
+        vpc_count=$((vpc_count + 1))
         
         # Get VPC details from AWS
         local aws_vpc_data
@@ -1138,7 +1144,7 @@ check_vpc_detailed_status() {
         case "$vpc_state" in
             "available") 
                 vpc_indicator="🟢"
-                ((available_vpcs++))
+                available_vpcs=$((available_vpcs + 1))
                 ;;
             "pending") 
                 vpc_indicator="🟡"
@@ -1238,7 +1244,7 @@ check_sg_detailed_status() {
             continue
         fi
         
-        ((sg_count++))
+        sg_count=$((sg_count + 1))
         
         # Get Security Group details from AWS
         local aws_sg_data
@@ -1259,7 +1265,7 @@ check_sg_detailed_status() {
         local vpc_id=$(echo "$aws_sg" | jq -r '.VpcId // empty')
         local owner_id=$(echo "$aws_sg" | jq -r '.OwnerId // empty')
         
-        ((active_sgs++))
+        active_sgs=$((active_sgs + 1))
         
         # Get rule counts
         local ingress_rules=$(echo "$aws_sg" | jq -r '.IpPermissions | length')

@@ -961,7 +961,7 @@ cleanup_known_hosts() {
         local cleanup_count=0
         for instance in "${instances_to_clean[@]}"; do
             if cleanup_instance_known_hosts "$env" "$instance"; then
-                ((cleanup_count++))
+                cleanup_count=$((cleanup_count + 1))
             fi
         done
         
@@ -1095,7 +1095,7 @@ cleanup_instance_known_hosts() {
     for host_or_ip in "${ips_and_hosts[@]}"; do
         if ssh-keygen -R "$host_or_ip" >/dev/null 2>&1; then
             debug_message "Removed known_hosts entry for: $host_or_ip"
-            ((removed_count++))
+            removed_count=$((removed_count + 1))
         fi
     done
     
@@ -1272,14 +1272,14 @@ empty_volumes_files() {
         
         # Empty the volumes.yml file (create as empty string, not empty YAML object)
         if : > "$volumes_file"; then
-            ((processed_count++))
+            processed_count=$((processed_count + 1))
             success_message "✅ Emptied volumes.yml for $module"
             
             if [[ -n "$backup_file" ]]; then
                 info_message "   Backup saved: $backup_file"
             fi
         else
-            ((error_count++))
+            error_count=$((error_count + 1))
             warn_message "❌ Failed to empty volumes.yml for $module"
             
             # Restore backup on failure if it exists

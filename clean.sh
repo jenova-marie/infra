@@ -49,7 +49,7 @@ execute_clean_operation() {
     while IFS= read -r module; do
         if [[ -n "$module" ]]; then
             if clean_module_files "$OP_ENV" "$module"; then
-                ((success_count++))
+                success_count=$((success_count + 1))
             else
                 failed_modules+=("$module")
             fi

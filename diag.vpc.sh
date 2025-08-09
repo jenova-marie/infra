@@ -35,7 +35,7 @@ diag_vpc_module() {
             local count=0
             while read -r vpc_id; do
                 [[ -z "$vpc_id" || "$vpc_id" == "null" ]] && continue
-                ((count++))
+                count=$((count + 1))
                 local vpc_json
                 if ! vpc_json=$(aws_describe_vpc "$env" "$vpc_id"); then
                     warn_message "   ❌ VPC not found: $vpc_id"
@@ -54,28 +54,13 @@ diag_vpc_module() {
             success_message "✅ VPC diagnostics completed ($count VPC(s))"
             ;;
         "vpc_routes")
-            print_diag_table_header_vpc_routes
-            local rtb_ids
-            rtb_ids=$(jq -r '..|strings?|select(startswith("rtb-"))' "$outputs_file" 2>/dev/null | sort -u || true)
-            if [[ -z "$rtb_ids" ]]; then
-                warn_message "   ❌ No route table IDs found in outputs"
-                return 1
+            # Delegate to specialized vpc_routes diagnostics module
+            source "$SCRIPT_DIR/diag.vpc_routes.sh" 2>/dev/null || true
+            if declare -f diag_vpc_routes_module >/dev/null 2>&1; then
+                diag_vpc_routes_module "$env" "$module"
+            else
+                handle_error "Diagnostics not yet implemented for module: $module"
             fi
-            local count=0
-            while read -r rtb_id; do
-                [[ -z "$rtb_id" ]] && continue
-                ((count++))
-                local rtb_json
-                if ! rtb_json=$(aws_describe_route_table "$env" "$rtb_id"); then
-                    warn_message "   ❌ Route Table not found: $rtb_id"
-                    continue
-                fi
-                local routes assoc
-                routes=$(echo "$rtb_json" | jq -r '.Routes | length')
-                assoc=$(echo "$rtb_json" | jq -r '.Associations | length')
-                print_diag_table_row_vpc_routes "$rtb_id" "$routes" "$assoc"
-            done < <(echo "$rtb_ids")
-            success_message "✅ VPC Routes diagnostics completed ($count route table(s))"
             ;;
         *)
             handle_error "Unsupported VPC diagnostic module: $module"

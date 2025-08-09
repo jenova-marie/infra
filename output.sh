@@ -431,7 +431,7 @@ copy_module_outputs_to_centralized() {
 #                 }
 #             fi
 #             
-#             ((wait_count++))
+#             wait_count=$((wait_count + 1))
 #         fi
 #     done
 #     
@@ -525,7 +525,7 @@ cleanup_destroyed_module_outputs() {
             if ! is_dry_run; then
                 debug_message "Removed local output file: $module_output_file"
             fi
-            ((files_removed++))
+            files_removed=$((files_removed + 1))
         fi
         
         # Remove centralized output file
@@ -534,12 +534,12 @@ cleanup_destroyed_module_outputs() {
             if ! is_dry_run; then
                 debug_message "Removed centralized output file: $centralized_file"
             fi
-            ((files_removed++))
+            files_removed=$((files_removed + 1))
         fi
         
         if [[ $files_removed -gt 0 ]]; then
             debug_message "Removed output files for module: $module"
-            ((processed_count++))
+            processed_count=$((processed_count + 1))
         fi
     done
     
@@ -708,7 +708,7 @@ validate_output_files() {
                 if ! is_dry_run; then
                     debug_message "Created missing local output file: $module_output_file"
                 fi
-                ((validation_count++))
+                validation_count=$((validation_count + 1))
             fi
             
             if [[ ! -f "$centralized_file" ]]; then
@@ -716,7 +716,7 @@ validate_output_files() {
                 if ! is_dry_run; then
                     debug_message "Created missing centralized output file: $centralized_file"
                 fi
-                ((validation_count++))
+                validation_count=$((validation_count + 1))
             fi
         fi
     done < <(safe_array_iterate "target_modules")
@@ -762,7 +762,7 @@ cleanup_stray_result_files() {
                     if [[ -f "$stray_file" ]]; then
                         rm -f "$stray_file"
                         debug_message "Removed stray result file: $stray_file"
-                        ((cleaned_count++))
+                        cleaned_count=$((cleaned_count + 1))
                     fi
                 done
             fi
@@ -775,7 +775,7 @@ cleanup_stray_result_files() {
                         if [[ -f "$cache_file" ]]; then
                             rm -f "$cache_file"
                             debug_message "Removed cached result file: $cache_file"
-                            ((cleaned_count++))
+                            cleaned_count=$((cleaned_count + 1))
                         fi
                     done <<< "$cache_result_files"
                 fi

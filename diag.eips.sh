@@ -34,7 +34,7 @@ diag_eips_module() {
     local count=0
     while read -r ip; do
         [[ -z "$ip" || "$ip" == "null" ]] && continue
-        ((count++))
+        count=$((count + 1))
         local eip_json
         if ! eip_json=$(aws_eip_describe_address "$env" "$ip"); then
             warn_message "   ❌ EIP not found: $ip"

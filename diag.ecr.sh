@@ -35,7 +35,7 @@ diag_ecr_module() {
     local total_images=0
     while read -r repo; do
         [[ -z "$repo" || "$repo" == "null" ]] && continue
-        ((count++))
+        count=$((count + 1))
         local repo_json
         if ! repo_json=$(aws_ecr_describe_repository "$env" "$repo"); then
             warn_message "   ❌ Repository not found: $repo"
@@ -48,7 +48,7 @@ diag_ecr_module() {
         scan=$(echo "$repo_json" | jq -r '.imageScanningConfiguration.scanOnPush // false')
         local image_count
         image_count=$(aws_ecr_list_images_count "$env" "$repo")
-        ((total_images += image_count))
+        total_images=$((total_images + image_count))
         print_diag_table_row_ecr "$repo" "$image_count" "$mutability" "$scan"
     done < <(echo "$repo_names")
 

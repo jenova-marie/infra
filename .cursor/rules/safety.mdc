@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+# Safety & Environment Rules
+
+- Do not execute `aws secretsmanager` from terminal or ad-hoc scripts.
+- Default to `dev`; do not modify `recoverysky-iac/src/live/prod` unless the request explicitly says "prod".
+- Ensure `AWS_REGION` is set for scripts and deployments.
+- Respect `LIVE_HOME`, `PROVISIONING_HOME`, `INFRA_HOME`, and extend `PATH` appropriately.

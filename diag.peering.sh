@@ -35,7 +35,7 @@ diag_peering_module() {
     local count=0
     while read -r pcx; do
         [[ -z "$pcx" ]] && continue
-        ((count++))
+        count=$((count + 1))
         local pcx_json
         if ! pcx_json=$(aws_describe_vpc_peering_connection "$env" "$pcx"); then
             warn_message "   ❌ Peering connection not found: $pcx"

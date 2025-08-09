@@ -64,10 +64,10 @@ execute_clean_operation() {
         
         if clean_module_files "$module"; then
             log_module_processing "$module" "success" "Files cleaned"
-            ((success_count++))
+            success_count=$((success_count + 1))
         else
             log_module_processing "$module" "error" "File cleaning failed"
-            ((failure_count++))
+            failure_count=$((failure_count + 1))
         fi
     done < <(safe_array_iterate "target_modules")
     

@@ -1,0 +1,12 @@
+---
+alwaysApply: true
+---
+# Output System Contract
+
+- All outputs must be generated via [output.sh](mdc:infra/output.sh).
+- For every generation path, **always dual-write**:
+  - Module-local: `[env]/[module]/output.json`
+  - Centralized: `[env]/outputs/[module].json`
+- Use `generate_module_outputs` and `copy_module_outputs_to_centralized` instead of direct file writes.
+- `validate_output_files` ensures both locations exist; maintain this invariant.
+- If adding cleanup, consider both locations for symmetry.

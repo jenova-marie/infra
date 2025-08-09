@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+# Documentation Update Policy
+
+- **Always update nearest docs after successful changes**:
+  - `CHANGELOG.md`: Summarize edits, scope, and impact near the changed files
+  - `README.md`: Update high-level behavior; include CST/CDT last-updated timestamp
+  - `STRUCTURE.md`: Reflect structure changes
+- Prefer concise, high-signal notes. Reference files with backticks.

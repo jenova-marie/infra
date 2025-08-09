@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+# DRY + KISS Enforcement
+
+- Review relevant architecture before changing code.
+- **DRY**: Consolidate duplicate logic into shared helpers (`shared.sh`, `aws.sh`, `output.sh`).
+- **KISS**: Prefer straightforward control flow and small functions.
+- Align with existing patterns unless a documented improvement is justified.

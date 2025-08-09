@@ -30,7 +30,7 @@ diag_security_groups_module() {
     local count=0
     while read -r sg_id; do
         [[ -z "$sg_id" || "$sg_id" == "null" ]] && continue
-        ((count++))
+        count=$((count + 1))
         local sg_json
         if ! sg_json=$(aws_describe_security_group "$env" "$sg_id"); then
             warn_message "   ❌ SG not found: $sg_id"

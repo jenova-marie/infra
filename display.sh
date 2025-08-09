@@ -508,6 +508,54 @@ print_diag_table_row_vpc_routes() {
     fi
 }
 
+# Detailed VPC Route Entry Table
+# Why: Show per-route details (destination, target, type, state, origin) for clarity when diagnosing routing
+print_diag_table_header_vpc_route_entries() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-22s %-22s %-10s %-8s %-14s${NC}\n" \
+            "Destination" "Target" "Type" "State" "Origin"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..80})${NC}"
+    else
+        printf "%-22s %-22s %-10s %-8s %-14s\n" \
+            "Destination" "Target" "Type" "State" "Origin"
+        printf '%0.s-' {1..80}; echo
+    fi
+}
+print_diag_table_row_vpc_route_entry() {
+    local destination="$1" target="$2" target_type="$3" state="$4" origin="$5"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-22s ${WHITE}%-22s ${WHITE}%-10s ${GREEN}%-8s ${WHITE}%-14s${NC}\n" \
+            "$destination" "${target:-none}" "${target_type:-unknown}" "${state:-unknown}" "${origin:-unknown}"
+    else
+        printf "%-22s %-22s %-10s %-8s %-14s\n" \
+            "$destination" "${target:-none}" "${target_type:-unknown}" "${state:-unknown}" "${origin:-unknown}"
+    fi
+}
+
+# VPC Route Associations Table
+# Why: Show which subnets (or main) are associated to each route table for quick diagnosis
+print_diag_table_header_vpc_route_associations() {
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${WHITE}%-20s %-6s %-22s %-18s${NC}\n" \
+            "AssociationID" "Main" "SubnetID" "RouteTableID"
+        echo -e "${PURPLE}$(printf '%0.s-' {1..72})${NC}"
+    else
+        printf "%-20s %-6s %-22s %-18s\n" \
+            "AssociationID" "Main" "SubnetID" "RouteTableID"
+        printf '%0.s-' {1..72}; echo
+    fi
+}
+print_diag_table_row_vpc_route_association() {
+    local assoc_id="$1" main_flag="$2" subnet_id="$3" rtb_id="$4"
+    if [[ "$NO_COLOR" != true ]]; then
+        printf "${CYAN}%-20s ${WHITE}%-6s ${WHITE}%-22s ${WHITE}%-18s${NC}\n" \
+            "${assoc_id:-none}" "${main_flag:-false}" "${subnet_id:-none}" "${rtb_id}"
+    else
+        printf "%-20s %-6s %-22s %-18s\n" \
+            "${assoc_id:-none}" "${main_flag:-false}" "${subnet_id:-none}" "${rtb_id}"
+    fi
+}
+
 # EBS
 print_diag_table_header_ebs() {
     if [[ "$NO_COLOR" != true ]]; then

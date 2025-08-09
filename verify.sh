@@ -44,18 +44,18 @@ record_verification_result() {
     local result="$2"
     local details="${3:-}"
     
-    ((VERIFICATION_TOTAL_CHECKS++))
+    VERIFICATION_TOTAL_CHECKS=$((VERIFICATION_TOTAL_CHECKS + 1))
     case "$result" in
         $VERIFY_PASS) 
-            ((VERIFICATION_PASSED_CHECKS++))
+            VERIFICATION_PASSED_CHECKS=$((VERIFICATION_PASSED_CHECKS + 1))
             debug_message "✅ $check_id: $details"
             ;;
         $VERIFY_FAIL) 
-            ((VERIFICATION_FAILED_CHECKS++))
+            VERIFICATION_FAILED_CHECKS=$((VERIFICATION_FAILED_CHECKS + 1))
             debug_message "❌ $check_id: $details"
             ;;
         $VERIFY_WARN) 
-            ((VERIFICATION_WARNING_CHECKS++))
+            VERIFICATION_WARNING_CHECKS=$((VERIFICATION_WARNING_CHECKS + 1))
             debug_message "⚠️  $check_id: $details"
             ;;
     esac
@@ -661,10 +661,10 @@ verify_ebs_comprehensive() {
             continue
         fi
         
-        ((volume_count++))
+        volume_count=$((volume_count + 1))
         
         if aws ec2 describe-volumes --volume-ids "$volume_id" --region "$aws_region" --output json >/dev/null 2>&1; then
-            ((verified_count++))
+            verified_count=$((verified_count + 1))
             record_verification_result "$module:volume:$volume_id" $VERIFY_PASS "Volume exists in AWS"
         else
             record_verification_result "$module:volume:$volume_id" $VERIFY_FAIL "Volume not found in AWS"
@@ -722,10 +722,10 @@ verify_eip_comprehensive() {
             continue
         fi
         
-        ((eip_count++))
+        eip_count=$((eip_count + 1))
         
         if aws ec2 describe-addresses --public-ips "$eip_address" --region "$aws_region" --output json >/dev/null 2>&1; then
-            ((verified_count++))
+            verified_count=$((verified_count + 1))
             record_verification_result "$module:eip:$eip_address" $VERIFY_PASS "EIP exists in AWS"
         else
             record_verification_result "$module:eip:$eip_address" $VERIFY_FAIL "EIP not found in AWS"
@@ -783,10 +783,10 @@ verify_ecr_comprehensive() {
             continue
         fi
         
-        ((repo_count++))
+        repo_count=$((repo_count + 1))
         
         if aws ecr describe-repositories --repository-names "$repo_name" --region "$aws_region" --output json >/dev/null 2>&1; then
-            ((verified_count++))
+            verified_count=$((verified_count + 1))
             record_verification_result "$module:repo:$repo_name" $VERIFY_PASS "Repository exists in AWS"
         else
             record_verification_result "$module:repo:$repo_name" $VERIFY_WARN "Repository not found in AWS"
@@ -844,10 +844,10 @@ verify_vpc_comprehensive() {
             continue
         fi
         
-        ((vpc_count++))
+        vpc_count=$((vpc_count + 1))
         
         if aws ec2 describe-vpcs --vpc-ids "$vpc_id" --region "$aws_region" --output json >/dev/null 2>&1; then
-            ((verified_count++))
+            verified_count=$((verified_count + 1))
             record_verification_result "$module:vpc:$vpc_id" $VERIFY_PASS "VPC exists in AWS"
         else
             record_verification_result "$module:vpc:$vpc_id" $VERIFY_FAIL "VPC not found in AWS"
@@ -905,10 +905,10 @@ verify_sg_comprehensive() {
             continue
         fi
         
-        ((sg_count++))
+        sg_count=$((sg_count + 1))
         
         if aws ec2 describe-security-groups --group-ids "$sg_id" --region "$aws_region" --output json >/dev/null 2>&1; then
-            ((verified_count++))
+            verified_count=$((verified_count + 1))
             record_verification_result "$module:sg:$sg_id" $VERIFY_PASS "Security Group exists in AWS"
         else
             record_verification_result "$module:sg:$sg_id" $VERIFY_FAIL "Security Group not found in AWS"

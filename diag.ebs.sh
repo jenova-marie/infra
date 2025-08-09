@@ -34,7 +34,7 @@ diag_ebs_module() {
     local count=0
     while read -r vol_id; do
         [[ -z "$vol_id" || "$vol_id" == "null" ]] && continue
-        ((count++))
+        count=$((count + 1))
         local vol_json
         if ! vol_json=$(aws_describe_volume "$env" "$vol_id"); then
             warn_message "   ❌ Volume not found: $vol_id"
