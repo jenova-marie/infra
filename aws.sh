@@ -10,6 +10,28 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
+# AWS CLI Availability Validation (KISS)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Purpose: Some modules (e.g., status checks) gate cloud lookups behind an
+#          "AWS CLI available" probe. Previously this function was absent,
+#          causing a false-negative and blocking status output with
+#          "AWS CLI unavailable" even when the CLI was installed. We keep the
+#          check intentionally simple to avoid hard-coupling to credentials or
+#          region here; downstream calls already pass an explicit
+#          --region and will surface meaningful errors per operation.
+# Usage: validate_aws_cli
+validate_aws_cli() {
+    # Verify the aws executable is on PATH. Do not validate credentials/region
+    # here to keep this a lightweight availability check.
+    if ! command -v aws >/dev/null 2>&1; then
+        debug_message "AWS CLI not found in PATH"
+        return 1
+    fi
+    return 0
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Output Parsing Helper Functions
 # ─────────────────────────────────────────────────────────────────────────────
 

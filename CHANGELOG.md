@@ -3129,6 +3129,11 @@ ls outputs/
 
 ## [Unreleased]
 
+### Fixed
+- Define `validate_aws_cli()` in `infra/aws.sh` as a lightweight PATH probe so status checks no longer report "AWS CLI unavailable" when the CLI is installed. This avoids false negatives introduced by the missing function and keeps credential/region validation delegated to the specific AWS calls that already supply `--region`.
+- Refactor `infra/status.sh` routing to use `modules.sh` (data-driven) for determining instance vs infrastructure instead of hardcoded names. New instances are automatically recognized from `modules.yml`.
+
+
 ### Changed 💫
 #### Volume Module Improvements and DRY_RUN Enhancement
 - **🧹 REMOVED DUPLICATE AWS FUNCTIONS**: Eliminated duplicate AWS CLI functions from `volume.sh` that were already properly implemented in `aws.sh`

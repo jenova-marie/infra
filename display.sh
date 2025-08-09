@@ -284,7 +284,7 @@ print_summary_box() {
         printf "${CYAN}$box_side${WHITE} 🌟 Online:        ${GREEN}%-3d ${WHITE}items                                         ${CYAN}│${NC}\n" "$STATUS_ONLINE_RESOURCES"
         printf "${CYAN}$box_side${WHITE} 💔 Offline:       ${RED}%-3d ${WHITE}items                                         ${CYAN}│${NC}\n" "$STATUS_OFFLINE_RESOURCES"
         printf "${CYAN}$box_side${WHITE} 🌸 Warning:       ${YELLOW}%-3d ${WHITE}items                                         ${CYAN}│${NC}\n" "$STATUS_WARNING_RESOURCES"
-        printf "${CYAN}$box_side${WHITE} 🦄 Unknown:       ${PURPLE}%-3d ${WHITE}items                                         ${CYAN}│${NC}\n" "$STATUS_UNKNOWN_RESOURCES"
+        printf "${CYAN}$box_side${WHITE} 🦄 Unknown:       ${RED}%-3d ${WHITE}items                                         ${CYAN}│${NC}\n" "$STATUS_UNKNOWN_RESOURCES"
         
         echo -e "${CYAN}$box_side                                                                     │${NC}"
         echo -e "${CYAN}$box_bottom${NC}"

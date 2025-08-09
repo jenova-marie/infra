@@ -25,6 +25,8 @@ This system follows a **"simplicity first"** approach with these core principles
 - **Self-Documenting**: Comprehensive help system provides detailed guidance for all operations
 - **Endpoint Flag Intelligence**: Endpoint flags (`--ssm`, `--ecr`, `--s3`) work seamlessly with all targeting methods
 
+> Note on AWS CLI availability: the status module uses a lightweight `validate_aws_cli()` that only checks for the `aws` binary on PATH. Credentials and region are validated on the specific AWS calls (which pass `--region`) to surface clearer, operation-specific errors.
+
 ---
 
 ## 🔒 **Secrets Protection System**

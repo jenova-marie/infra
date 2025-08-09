@@ -15,6 +15,7 @@ set -euo pipefail
 
 # Color codes for output formatting
 declare -r RED='\033[0;31m'
+declare -r BRIGHT_RED='\033[1;31m'
 declare -r GREEN='\033[0;32m'
 declare -r YELLOW='\033[1;33m'
 declare -r BLUE='\033[0;34m'

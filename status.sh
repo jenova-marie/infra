@@ -140,6 +140,9 @@ execute_status_operation() {
     # Use KISS approach - get all operation context in one call
     get_operation_context
     
+    # Load modules for this environment so routing is data-driven
+    load_modules "$OP_ENV"
+    
     debug_message "Starting status check for environment: $OP_ENV, target: $OP_TARGET_TYPE"
     log_phase "Infrastructure status check"
     
@@ -179,19 +182,33 @@ execute_summary_status() {
         handle_error "Failed to get modules for target: $target_type"
     fi
     
-    # Group modules by type for better organization
+    # Group modules by type using modules.sh (no hardcoded names)
     local instances=()
     local infrastructure=()
     
+    # Build a list of instance modules for membership checks
+    local known_instance_modules=()
+    while IFS= read -r mod; do
+        [[ -n "$mod" ]] && known_instance_modules+=("$mod")
+    done < <(get_instance_modules)
+    
+    _is_instance_module() {
+        local needle="$1"
+        local m
+        for m in "${known_instance_modules[@]:-}"; do
+            if [[ "$m" == "$needle" ]]; then
+                return 0
+            fi
+        done
+        return 1
+    }
+    
     for module in "${modules_to_check[@]:-}"; do
-        case "$module" in
-            "athena"|"aegis"|"metis"|"mnemosyne")
-                instances+=("$module")
-                ;;
-            *)
-                infrastructure+=("$module")
-                ;;
-        esac
+        if _is_instance_module "$module"; then
+            instances+=("$module")
+        else
+            infrastructure+=("$module")
+        fi
     done
     
     # Show instances if any
@@ -244,30 +261,33 @@ execute_detailed_status() {
     local env="$1"
     local module="$2"
     
-    # Route to appropriate detailed status check
-    case "$module" in
-        "athena"|"aegis"|"metis"|"mnemosyne")
-            check_instance_detailed_status "$env" "$module"
-            ;;
-        "ebss")
-            check_ebs_detailed_status "$env" "$module"
-            ;;
-        "eips")
-            check_eip_detailed_status "$env" "$module"
-            ;;
-        "ecrs")
-            check_ecr_detailed_status "$env" "$module"
-            ;;
-        "vpcs")
-            check_vpc_detailed_status "$env" "$module"
-            ;;
-        "security_groups")
-            check_sg_detailed_status "$env" "$module"
-            ;;
-        *)
-            warn_message "❓ No detailed status check available for module: $module"
-            ;;
-    esac
+    # Route to appropriate detailed status check using modules.yml type
+    local module_type
+    module_type=$(get_module_type "$module" 2>/dev/null || echo "")
+    if [[ "$module_type" == "instance" ]]; then
+        check_instance_detailed_status "$env" "$module"
+    else
+        case "$module" in
+            "ebss")
+                check_ebs_detailed_status "$env" "$module"
+                ;;
+            "eips")
+                check_eip_detailed_status "$env" "$module"
+                ;;
+            "ecrs")
+                check_ecr_detailed_status "$env" "$module"
+                ;;
+            "vpcs")
+                check_vpc_detailed_status "$env" "$module"
+                ;;
+            "security_groups")
+                check_sg_detailed_status "$env" "$module"
+                ;;
+            *)
+                warn_message "❓ No detailed status check available for module: $module"
+                ;;
+        esac
+    fi
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -291,15 +311,14 @@ check_module_summary_status() {
         return
     fi
     
-    # Route to appropriate summary check
-    case "$module" in
-        "athena"|"aegis"|"metis"|"mnemosyne")
-            check_instance_summary_status "$env" "$module"
-            ;;
-        *)
-            check_infrastructure_summary_status "$env" "$module"
-            ;;
-    esac
+    # Route to appropriate summary check using modules.yml type
+    local module_type
+    module_type=$(get_module_type "$module" 2>/dev/null || echo "")
+    if [[ "$module_type" == "instance" ]]; then
+        check_instance_summary_status "$env" "$module"
+    else
+        check_infrastructure_summary_status "$env" "$module"
+    fi
 }
 
 # Check instance summary status with basic details
@@ -1307,15 +1326,14 @@ check_module_summary_status_pretty() {
         return
     fi
     
-    # Route to appropriate summary check
-    case "$module" in
-        "athena"|"aegis"|"metis"|"mnemosyne")
-            check_instance_summary_status_pretty "$env" "$module"
-            ;;
-        *)
-            check_infrastructure_summary_status_pretty "$env" "$module"
-            ;;
-    esac
+    # Route to appropriate summary check using modules.yml type
+    local module_type
+    module_type=$(get_module_type "$module" 2>/dev/null || echo "")
+    if [[ "$module_type" == "instance" ]]; then
+        check_instance_summary_status_pretty "$env" "$module"
+    else
+        check_infrastructure_summary_status_pretty "$env" "$module"
+    fi
 }
 
 # Enhanced instance summary status check
