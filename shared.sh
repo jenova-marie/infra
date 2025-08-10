@@ -908,12 +908,11 @@ cleanup_known_hosts() {
                     
                     # Add potential FQDNs
                     ips_and_hosts+=(
-                        "$instance.cmd"
-                        "$instance.dev"
-                        "$instance.prod"
-                        "$instance.recoverysky.dev"
-                        "$instance-$env.recoverysky.dev"
-                        "$instance.$env.recoverysky.dev"
+                        "$instance.cmd.rso"
+                        "$instance.prod.rso"
+                        "$instance.dev.rso"
+                        "$instance-$env.dev.rso"
+                        "$instance.$env.dev.rso"
                     )
                     
                     # Show what would be cleaned
@@ -1074,9 +1073,9 @@ cleanup_instance_known_hosts() {
     
     # Generate potential FQDNs based on instance name and environment
     local potential_fqdns=(
-        "$instance.recoverysky.dev"
-        "$instance-$env.recoverysky.dev"
-        "$instance.$env.recoverysky.dev"
+        "$instance.dev.rso"
+        "$instance-$env.dev.rso"
+        "$instance.$env.dev.rso"
     )
     
     # Add FQDNs to cleanup list

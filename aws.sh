@@ -703,7 +703,7 @@ execute_reboot_operation() {
     
     # Step 1: SSH shutdown
     info_message "🛑 Step 1/3: SSH shutdown..."
-    local hostname="${instance_name}-${OP_ENV}.recoverysky.dev"
+    local hostname="${instance_name}-${OP_ENV}.dev.rso"
     
     if is_dry_run; then
         dry_run_message "[DRY-RUN] Would execute SSH shutdown and AWS reboot sequence"
