@@ -55,6 +55,7 @@ VPCS=false
 
 # Clean operation flags
 OUTPUTS=false
+VOLUMES=false
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Argument Parsing Functions
@@ -238,6 +239,11 @@ parse_standard_operation_args() {
             "--outputs")
                 OUTPUTS=true
                 debug_message "Outputs removal flag enabled - will remove output files during clean operations"
+                shift
+                ;;
+            "--volumes")
+                VOLUMES=true
+                debug_message "Volumes removal flag enabled - will remove instance volumes.yml during clean operations"
                 shift
                 ;;
             *)
@@ -1031,6 +1037,12 @@ is_vpcs() {
 is_outputs() {
     # Default behavior: preserve outputs unless --outputs is explicitly set
     [[ "${OUTPUTS:-false}" == "true" ]]
+}
+
+# Check if volumes files should be cleaned (default: false, unless --volumes is used)
+# Usage: is_volumes
+is_volumes() {
+    [[ "${VOLUMES:-false}" == "true" ]]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -193,6 +193,16 @@ clean_module_files() {
             debug_message "Removed from $module: output.json"
         fi
     fi
+
+    # Clean instance volumes.yml only if --volumes flag is used
+    if is_volumes; then
+        local volumes_file="$module_path/volumes.yml"
+        if [[ -f "$volumes_file" ]]; then
+            execute_with_dry_run "rm -f '$volumes_file'" "Would remove: $volumes_file"
+            cleaned_files+=("volumes.yml")
+            debug_message "Removed from $module: volumes.yml"
+        fi
+    fi
     
     # Report cleaned files for this module
     if [[ ${#cleaned_files[@]} -gt 0 ]]; then
