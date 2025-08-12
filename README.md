@@ -1,6 +1,6 @@
 # Infrastructure Management System v2.0.38
 
-**Last Updated:** August 11, 2025 at 05:23 PM CDT
+**Last Updated:** August 11, 2025 at 08:02 PM CDT
 
 **Version:** 2.0.38  
 **Purpose:** Simplified, reliable infrastructure orchestration for Terraform/Terragrunt with DRY AWS CLI integration and performance optimization
@@ -1097,11 +1097,21 @@ dev/
 ./infra clean dev:infrastructure --verbose 1
 ```
 
+#### **Additional Examples**
+```bash
+# Also remove per-instance volumes.yml files during clean
+./infra clean dev:instances --volumes
+
+# Combine with dry-run for preview
+./infra clean dev:all --volumes --dry-run
+```
+
 ### **What Gets Cleaned**
 - **`.terragrunt-cache` directories**: Terragrunt's local cache directories
 - **Recursive search**: Finds cache directories at any depth within modules
 - **Safe removal**: Only removes `.terragrunt-cache` directories, nothing else
 - **Progress reporting**: Shows count of cleaned directories per module
+- **`volumes.yml` files (optional)**: When `--volumes` is provided, removes per-instance `volumes.yml` to reset desired volume attachments
 
 ### **When to Use Clean**
 - **After major changes**: When module dependencies change significantly
