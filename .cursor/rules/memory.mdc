@@ -1,0 +1,376 @@
+---
+alwaysApply: false
+---
+# Memory Tool Usage
+- Store all memory for this project in database: 'infra'
+- Use MCP memory tools exclusively for storing project-related information
+- Begin each session by:
+  1. Switching to this project's database
+  2. Searching memory for data relevant to the user's prompt
+
+# Neo4j Memory Management Rules for mcp-neo4j-memory-server
+
+## Core Principles
+
+You are an expert in Neo4j graph databases and the mcp-neo4j-memory-server implementation. Follow these rules when designing, implementing, or querying memory systems using @sylweriusz/mcp-neo4j-memory-server.
+
+## MCP Tools Architecture
+
+### Available Tools (4 Unified Tools)
+The mcp memory server provides 4 unified MCP tools that integrate automatically with Claude:
+
+1. **memory_store** - Create memories with observations and immediate relations in ONE operation
+2. **memory_find** - Unified search/retrieval with semantic search, direct ID lookup, date filtering, and graph traversal
+3. **memory_modify** - Comprehensive modification operations (update, delete, observations, relations)
+4. **database_switch** - Switch database context for isolated environments
+
+### Memory Structure
+```json
+{
+  "id": "dZ$abc123",
+  "name": "Project Alpha", 
+  "memoryType": "project",
+  "metadata": {"status": "active", "priority": "high"},
+  "observations": [
+    {"id": "dZ$obs456", "content": "Started development", "createdAt": "2025-06-08T10:00:00Z"}
+  ],
+  "related": {
+    "ancestors": [{"id": "dZ$def789", "name": "Initiative", "relation": "PART_OF", "distance": 1}],
+    "descendants": [{"id": "dZ$ghi012", "name": "Task", "relation": "INCLUDES", "distance": 1}]
+  }
+}
+```
+
+## Data Model Rules
+
+### Node Design Standards
+- **Memory Nodes**: Core entities with `id`, `name`, `memoryType`, `metadata`, `createdAt`, `updatedAt`
+- **Observation Nodes**: Content attachments with `id`, `content`, `createdAt`, `metadata`
+- **ID Format**: Use localId pattern with prefixes like "dZ$" for batch operations
+- **Vector Properties**: 384-dimensional embeddings using sentence transformers
+
+### Memory Types Classification
+- **Episodic**: Specific events and conversations
+- **Semantic**: Facts, preferences, and learned knowledge  
+- **Procedural**: How-to information and processes
+- **Project**: Project-specific memories and context
+- **Meta**: Patterns about user cognition and behavior
+
+### Relationship Standards
+```cypher
+// Core relationship types from the MCP server
+(:Memory)-[:HAS_OBSERVATION]->(:Observation)
+(:Memory)-[:RELATES_TO]->(:Memory)
+(:Memory)-[:PART_OF]->(:Memory)  // ancestors
+(:Memory)-[:INCLUDES]->(:Memory) // descendants
+```
+
+### Relationship Properties
+- **strength**: Float 0.0-1.0 for relationship intensity
+- **relation**: String describing relationship type ("PART_OF", "INCLUDES", "RELATES_TO")
+- **distance**: Integer for graph traversal depth
+- **source**: Tracking where the relationship was created
+- **createdAt**: Timestamp for temporal analysis
+
+## Query Optimization for DozerDB/Community Edition
+
+### Required Indices
+```cypher
+// Essential indices for mcp-neo4j-memory-server
+CREATE INDEX memory_id FOR (m:Memory) ON (m.id);
+CREATE INDEX memory_type FOR (m:Memory) ON (m.memoryType);
+CREATE INDEX observation_created FOR (o:Observation) ON (o.createdAt);
+CREATE FULLTEXT INDEX memory_content FOR (m:Memory, o:Observation) ON EACH [m.name, o.content];
+
+// Vector index using GDS (DozerDB compatible)
+CALL gds.graph.project('memoryGraph', 'Memory', '*');
+```
+
+### Community Edition Limitations
+- **CPU Cores**: Community Edition of the Graph Data Science Library includes all algorithms and features, but is limited to four CPU cores
+- **GDS Functions**: Use basic similarity functions like `gds.similarity.cosine()` 
+- **Memory Limits**: Monitor heap usage for large vector operations
+- **No Enterprise Features**: No hot backups, clustering, or advanced security
+
+### Optimized Query Patterns
+```cypher
+// Semantic search using GDS cosine similarity
+MATCH (m:Memory)
+WHERE gds.similarity.cosine(m.embedding_vector, $queryVector) > 0.7
+RETURN m ORDER BY gds.similarity.cosine(m.embedding_vector, $queryVector) DESC
+LIMIT 10;
+
+// Temporal filtering (mcp-neo4j-memory-server pattern)
+MATCH (m:Memory)-[:HAS_OBSERVATION]->(o:Observation)
+WHERE o.createdAt > datetime() - duration('P30D')
+RETURN m, o ORDER BY o.createdAt DESC;
+
+// Graph traversal with depth control
+MATCH path = (start:Memory {id: $memoryId})-[:RELATES_TO*1..3]-(related:Memory)
+RETURN start, related, length(path) as distance
+ORDER BY distance;
+```
+
+## Memory Lifecycle Management
+
+### Workflow Rules
+Begin each session by: 1. Switching to this project's database 2. Searching memory for data relevant to the user's prompt
+
+```cypher
+// 1. Switch database context first
+CALL database_switch("project-database-name");
+
+// 2. Search before creating
+CALL memory_find({query: "search terms", limit: 10});
+
+// 3. Create with batch operations using localId
+CALL memory_store({
+  memories: [
+    {localId: "mem1", name: "Project Alpha", memoryType: "project"},
+    {localId: "mem2", name: "Task Beta", memoryType: "task"}
+  ],
+  relations: [
+    {from: "mem1", to: "mem2", relation: "INCLUDES"}
+  ]
+});
+```
+
+### Observation Management
+```cypher
+// Add observations to existing memories
+CALL memory_modify({
+  memoryId: "dZ$abc123",
+  operation: "add_observation", 
+  observation: {
+    content: "New development update",
+    metadata: {"source": "meeting", "priority": "high"}
+  }
+});
+```
+
+### Memory Consolidation
+```cypher
+// Find similar memories for consolidation
+MATCH (m1:Memory), (m2:Memory)
+WHERE id(m1) < id(m2)
+AND gds.similarity.cosine(m1.embedding_vector, m2.embedding_vector) > 0.95
+RETURN m1, m2, gds.similarity.cosine(m1.embedding_vector, m2.embedding_vector) AS similarity
+ORDER BY similarity DESC;
+```
+
+## Search and Retrieval Patterns
+
+### Unified Search Capabilities
+Unified search/retrieval with semantic search, direct ID lookup, date filtering, and graph traversal
+
+```cypher
+// Semantic vector search
+CALL memory_find({
+  query: "machine learning project",
+  searchType: "semantic",
+  limit: 5
+});
+
+// Exact ID lookup  
+CALL memory_find({
+  memoryIds: ["dZ$abc123", "dZ$def456"]
+});
+
+// Date filtering with relative dates
+CALL memory_find({
+  dateFilter: {
+    field: "createdAt",
+    operator: "within", 
+    value: "7d"  // Last 7 days
+  }
+});
+
+// Graph traversal search
+CALL memory_find({
+  startMemoryId: "dZ$project1",
+  traversal: {
+    direction: "descendants",
+    maxDepth: 2
+  }
+});
+```
+
+### Response Detail Levels
+Context Control - Response detail levels: minimal (lists), full (complete data), relations-only
+
+```cypher
+// Minimal response
+CALL memory_find({query: "project", responseLevel: "minimal"});
+
+// Full data response
+CALL memory_find({query: "project", responseLevel: "full"});
+
+// Relations only
+CALL memory_find({query: "project", responseLevel: "relations-only"});
+```
+
+## Multi-Database Project Isolation
+
+### Database Organization
+Separate memories by project using different databases
+
+```cypher
+// Switch to project-specific database
+CALL database_switch("project-alpha-memory");
+
+// Create project-scoped memories
+CALL memory_store({
+  memories: [{
+    name: "Project Alpha Requirements",
+    memoryType: "project",
+    metadata: {"project": "alpha", "phase": "planning"}
+  }]
+});
+```
+
+### Project Workflow
+```cypher
+// 1. Always switch to project database first
+CALL database_switch("client-project-2025");
+
+// 2. Search existing project context
+CALL memory_find({
+  query: "requirements discussion",
+  memoryTypes: ["project", "meeting"]
+});
+
+// 3. Store new project memories
+CALL memory_store({
+  memories: [/* project memories */],
+  projectContext: "client-project-2025"
+});
+```
+
+## Error Handling and Debugging
+
+### Zero-Fallback Design
+Zero-Fallback - Explicit errors for reliable debugging, no silent failures
+
+```javascript
+// Handle MCP tool errors explicitly
+try {
+  const result = await memory_store({memories: [...]});
+  if (result.error) {
+    console.error("Memory store failed:", result.error);
+    // Handle specific error cases
+  }
+} catch (error) {
+  console.error("MCP tool execution failed:", error);
+}
+```
+
+### Common Troubleshooting
+```cypher
+// Check GDS plugin availability
+RETURN gds.version() as gdsVersion;
+
+// Verify vector operations work
+RETURN gds.similarity.cosine([1,2,3], [2,3,4]) as similarity;
+
+// Monitor memory usage
+CALL dbms.listQueries() 
+YIELD query, allocatedBytes
+WHERE allocatedBytes > 100000000  // 100MB
+RETURN query, allocatedBytes;
+```
+
+## Performance and Scaling Rules
+
+### DozerDB Specific Optimizations
+- **CPU Limit**: Design queries for 2-core Community Edition limit
+- **Batch Size**: Batch Operations - Create multiple memories with relationships in single request using localId
+- **Vector Limits**: Monitor embedding storage and similarity computations
+- **Memory Cleanup**: Implement regular cleanup of unused observations
+
+### Query Performance
+```cypher
+// Efficient batch memory creation
+CALL memory_store({
+  memories: [
+    {localId: "m1", name: "Memory 1", memoryType: "semantic"},
+    {localId: "m2", name: "Memory 2", memoryType: "episodic"},
+    // ... up to 100 memories per batch
+  ],
+  relations: [
+    {from: "m1", to: "m2", relation: "RELATES_TO"}
+  ]
+});
+
+// Limit expensive vector operations
+MATCH (m:Memory)
+WHERE m.createdAt > datetime() - duration('P7D')  // Filter first
+WITH m
+WHERE gds.similarity.cosine(m.embedding_vector, $queryVector) > 0.7
+RETURN m LIMIT 10;  // Always use LIMIT
+```
+
+## Security and Access Control
+
+### MCP Server Security
+- Use parameterized MCP tool calls only
+- Validate all input through MCP schema
+- Never expose raw Cypher to clients
+- Implement project-level database isolation
+
+### Data Privacy
+```cypher
+// User-scoped memory deletion
+CALL memory_modify({
+  operation: "delete_user_memories",
+  userId: $userId,
+  projectDatabase: $projectDb
+});
+
+// Project memory archival
+CALL memory_modify({
+  operation: "archive_project", 
+  projectDatabase: $projectDb,
+  archiveDate: datetime()
+});
+```
+
+## Code Style and Conventions
+
+### Naming Standards
+- **Memory IDs**: Use server-generated format "dZ$abc123"
+- **localId**: Use for batch operations before server assignment
+- **memoryType**: Use lowercase with underscores ("project_planning", "user_preference")
+- **Relations**: Use SCREAMING_SNAKE_CASE ("PART_OF", "RELATES_TO", "INCLUDES")
+
+### MCP Tool Usage Patterns
+```javascript
+// Always check for existing memories first
+const existing = await memory_find({
+  query: "project alpha requirements",
+  memoryTypes: ["project"]
+});
+
+if (existing.memories.length === 0) {
+  // Create new memory
+  await memory_store({
+    memories: [{
+      name: "Project Alpha Requirements",
+      memoryType: "project",
+      observations: [{
+        content: "Initial requirements gathering session"
+      }]
+    }]
+  });
+} else {
+  // Add observation to existing memory
+  await memory_modify({
+    memoryId: existing.memories[0].id,
+    operation: "add_observation",
+    observation: {
+      content: "Updated requirements from client feedback"
+    }
+  });
+}
+```
+
+Remember: The mcp-neo4j-memory-server provides unified architecture with 4 comprehensive tools for complete memory operations. Always use the MCP tools rather than direct Cypher queries, leverage DozerDB's GDS capabilities for vector operations, and follow the project-database isolation pattern for organized memory management.
